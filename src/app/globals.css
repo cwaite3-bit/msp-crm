@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/*
+ * This app always renders in a light theme. We intentionally do NOT follow
+ * prefers-color-scheme: dark here — the UI components (inputs, cards,
+ * tables, etc.) all use fixed light-mode colors (bg-white, text-slate-900),
+ * and letting only the body's --foreground variable flip to a near-white
+ * color on a dark-mode browser produced barely-visible text inside those
+ * white form fields. If real dark-mode support is wanted later, every
+ * component needs matching dark: classes, not just this variable.
+ */
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -10,13 +19,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
