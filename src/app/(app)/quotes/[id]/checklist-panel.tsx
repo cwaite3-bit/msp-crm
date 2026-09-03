@@ -4,7 +4,9 @@ import { useState, useTransition } from "react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { updateChecklistItem } from "@/server/actions/quotes";
+import { Button } from "@/components/ui/button";
+import { updateChecklistItem, completeAllChecklistItems } from "@/server/actions/quotes";
+import { toast } from "sonner";
 import type { ChecklistTemplateItem } from "@/server/pricing-data";
 
 type ChecklistItemState = { key: string; status: string; note?: string };
@@ -35,15 +37,32 @@ export function ChecklistPanel({
     });
   }
 
+  function markAllComplete() {
+    setItems((prev) => prev.map((i) => (i.status === "Review" ? { ...i, status: "Complete" } : i)));
+    startTransition(async () => {
+      await completeAllChecklistItems(quoteId);
+      toast.success("Marked remaining items complete");
+    });
+  }
+
+  const remaining = items.filter((i) => i.status === "Review").length;
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-500">
           {done} of {template.length} complete
         </p>
-        <Badge variant={done === template.length ? "success" : "warning"}>
-          {done === template.length ? "Ready" : "Review needed"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {remaining > 0 && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={pending} onClick={markAllComplete}>
+              Mark all complete
+            </Button>
+          )}
+          <Badge variant={done === template.length ? "success" : "warning"}>
+            {done === template.length ? "Ready" : "Review needed"}
+          </Badge>
+        </div>
       </div>
 
       <div className="flex flex-col divide-y divide-slate-100">

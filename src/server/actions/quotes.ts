@@ -195,6 +195,21 @@ export async function updateChecklistItem(
   revalidatePath(`/quotes/${quoteId}`);
 }
 
+// One-click "mark all complete" for staff who don't want to click through
+// every item individually. Only flips items still sitting at "Review" —
+// anything already marked "N/A" (a deliberate call, e.g. a compliance
+// question that doesn't apply to this customer) is left as-is rather than
+// being overwritten to "Complete", which would misrepresent it.
+export async function completeAllChecklistItems(quoteId: string) {
+  await requireUser();
+  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+  if (!quote) return;
+  const checklist = (quote.checklist as { key: string; status: string; note?: string }[]) || [];
+  const next = checklist.map((item) => (item.status === "Review" ? { ...item, status: "Complete" } : item));
+  await db.update(quotes).set({ checklist: next, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
+  revalidatePath(`/quotes/${quoteId}`);
+}
+
 // Sets the quote's selected tier and regenerates its ENGINE-sourced line
 // items from the pricing engine. Hand-added/"add on the fly" (MANUAL) line
 // items are left untouched. Safe to call repeatedly, e.g. after editing
