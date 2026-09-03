@@ -13,11 +13,14 @@
   redundant - the main reason to reach for it is if the GitHub integration
   ever stops auto-deploying and you need a way to force a deploy anyway.
 
-  This intentionally does NOT run database migrations. Migrations are
-  their own manual step, run with a fresh, verified DATABASE_URL - see
-  deployment-runbook.md. Baking that into a script that runs on every
-  push is exactly the kind of automation that caused the original
-  "migrated the wrong database" mess this script exists to prevent.
+  Database migrations are NOT run unless you explicitly pass -Migrate.
+  Even then, this script does not just trust whatever $env:DATABASE_URL
+  happens to be set to - it prints the exact host it's about to run
+  `npm run db:migrate` against and makes you type YES after actually
+  looking at it. That "eyeball it first" check is what would have caught
+  the original "migrated the wrong database" mess this script exists to
+  prevent - skipping the check would just make the same mistake easier
+  to make again, faster.
 
 .PARAMETER Message
   Commit message. Required.
@@ -26,18 +29,37 @@
   Switch. If passed, also runs `vercel --prod --yes` after the git push.
   Requires `vercel login` to have been run at least once already.
 
+.PARAMETER Migrate
+  Switch. If passed, runs `npm run db:migrate` against $env:DATABASE_URL
+  after the deploy step - but only after printing the exact host from
+  that connection string and requiring you to type YES to confirm it's
+  really the production database. Only use this on a push that actually
+  changes the schema.
+
+.PARAMETER Seed
+  Switch. Only has an effect combined with -Migrate. After a confirmed
+  migrate, also runs `npm run db:seed` (safe to re-run - it upserts).
+
 .EXAMPLE
   .\scripts\deploy.ps1 -Message "Fix catalog tier display"
 
 .EXAMPLE
   .\scripts\deploy.ps1 -Message "Fix catalog tier display" -AlsoVercelDeploy
+
+.EXAMPLE
+  $env:DATABASE_URL = "<production connection string>"
+  .\scripts\deploy.ps1 -Message "Add app_settings table" -Migrate -Seed
 #>
 
 param(
     [Parameter(Mandatory = $true)]
     [string]$Message,
 
-    [switch]$AlsoVercelDeploy
+    [switch]$AlsoVercelDeploy,
+
+    [switch]$Migrate,
+
+    [switch]$Seed
 )
 
 $ErrorActionPreference = "Stop"
@@ -115,5 +137,43 @@ if ($AlsoVercelDeploy) {
     vercel --prod --yes
 }
 
+# --- 6. Optional: migrate, with a mandatory eyeball-the-host check --------
+if ($Migrate) {
+    Write-Host "`n-Migrate was passed." -ForegroundColor Cyan
+
+    if (-not $env:DATABASE_URL) {
+        Fail "`$env:DATABASE_URL is not set in this window. Set it to the PRODUCTION connection string first (see deployment-runbook.md), then re-run with -Migrate."
+    }
+
+    $dbHostName = "(could not parse a host out of DATABASE_URL - look at the full string below)"
+    if ($env:DATABASE_URL -match '@([^/]+)/') {
+        $dbHostName = $Matches[1]
+    }
+
+    Write-Host "`nAbout to run 'npm run db:migrate' against:" -ForegroundColor Yellow
+    Write-Host "  host: $dbHostName" -ForegroundColor Yellow
+    Write-Host "  full DATABASE_URL: $env:DATABASE_URL"
+    $dbConfirm = Read-Host "`nIs that host really your PRODUCTION database? Type YES (all caps) to proceed"
+
+    if ($dbConfirm -ne "YES") {
+        Write-Host "Skipped migration - typed '$dbConfirm', not 'YES'." -ForegroundColor Yellow
+    } else {
+        npm run db:migrate
+        if ($LASTEXITCODE -ne 0) {
+            Fail "db:migrate failed - see the error above. Nothing further was run."
+        }
+        Write-Host "Migration applied." -ForegroundColor Green
+
+        if ($Seed) {
+            npm run db:seed
+            if ($LASTEXITCODE -ne 0) {
+                Fail "db:seed failed - see the error above."
+            }
+            Write-Host "Seed applied." -ForegroundColor Green
+        }
+    }
+} else {
+    Write-Host "`nNote: -Migrate was not passed. If this push included a database schema change, that still needs 'npm run db:migrate' - either re-run this script with -Migrate, or do it manually per deployment-runbook.md." -ForegroundColor Yellow
+}
+
 Write-Host "`nDone. Once the deployment shows Ready, hard-refresh https://msp-crm-seven.vercel.app and check the changed area." -ForegroundColor Cyan
-Write-Host "If this push included a database schema change, that still needs a separate, manual 'npm run db:migrate' - see deployment-runbook.md. This script does not run it for you." -ForegroundColor Yellow
