@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -29,8 +30,15 @@ export function NavShell({
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div className="flex h-14 items-center border-b border-slate-200 px-5">
-          <span className="text-sm font-semibold tracking-tight">MSP CRM &amp; Quoting</span>
+        <div className="flex h-20 items-center border-b border-slate-200 px-5">
+          <Image
+            src="/lockdown-logo.png"
+            alt="Lockdown IT"
+            width={5052}
+            height={1264}
+            className="h-auto w-full"
+            priority
+          />
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-3">
           {NAV.map((item) => {

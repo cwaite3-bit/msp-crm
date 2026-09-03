@@ -23,5 +23,9 @@ export default auth(function proxy(req) {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Also exclude plain static files served from /public (logo, icons, etc.)
+  // — without this, Next's image optimizer fetches them internally with no
+  // session cookie attached, the proxy redirects that fetch to /login, and
+  // the "image" it gets back is a login page, which fails to render.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|avif)$).*)"],
 };

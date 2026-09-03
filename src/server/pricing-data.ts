@@ -279,6 +279,61 @@ export const DEFAULT_SCOPE_MATRIX: ScopeMatrixRow[] = [
   { key: "training_tutoring", service: "Training / Tutoring", bronze: "Per Incident", silver: "Per Incident", gold: "Per Incident", customerDescription: "User/group training available separately.", scopeNote: "Not unlimited help desk." },
 ];
 
+// Plain-English definitions for every status term used in the scope matrix
+// above, shown as a hover tooltip on the client-facing proposal so terms
+// like "Defined" or "Reasonable" aren't left unexplained. Wording is drawn
+// from "Lockdown IT Managed Services Coverage Guide" (what "managed" means,
+// per-incident vs. project work, the unlimited-support caveat, etc.) so the
+// proposal page and the coverage guide describe things the same way.
+export const SCOPE_TERM_DEFINITIONS: Record<string, string> = {
+  Included: "Provided as part of this plan at no additional charge, within the agreed scope.",
+  Basic: "Routine administration is included. Larger configuration or change work may be billed separately.",
+  Defined: "Covered up to the support allowance defined in your plan — not unlimited.",
+  "Unlimited Qualifying": "No per-ticket charge for routine support of covered users and technology. Doesn't include projects, custom development, consulting, or work outside the managed environment.",
+  Standard: "Handled in normal queue order, based on business impact.",
+  Priority: "Moved ahead of standard-tier requests, per this plan's response targets.",
+  Highest: "Top-priority handling under this plan's response targets.",
+  Optional: "Not included by default at this tier — available to add for an additional fee.",
+  "Emergency Included": "Genuine after-hours emergencies are covered. Non-emergency after-hours work may still be billable.",
+  Enhanced: "A deeper level of this service than the tier below provides.",
+  Reasonable: "We coordinate with the vendor as practical, but can't guarantee their response time, availability, or resolution.",
+  Core: "The baseline documentation needed to support your environment — not general business documentation.",
+  "Not Included": "Not part of this plan. Available as separately scoped, per-incident, or project work.",
+  "Add-On": "Available for an additional monthly fee.",
+  "Included Allowance": "A defined number of hours per month is included; time beyond that is billed at the applicable rate.",
+  Billable: "Not part of the monthly plan — billed as time-and-materials when it comes up.",
+  "Billable / vCIO": "Billable unless you have vCIO hours available to apply toward it.",
+  "vCIO Allowance": "Drawn from this plan's included vCIO hours; time beyond the allowance is billed at the consulting rate.",
+  Project: "Treated as project work — scoped and quoted separately from the monthly plan, regardless of tier.",
+  "Per Incident": "Available on request and billed per incident — not included in the monthly plan, regardless of tier.",
+};
+
+// Coarse grouping of the same terms, used to pick an icon/color for the
+// term badge: "included" (green check), "addon" (amber, costs extra),
+// or "excluded" (muted, not part of the managed plan at any tier).
+export const SCOPE_TERM_VARIANT: Record<string, "included" | "addon" | "excluded"> = {
+  Included: "included",
+  Basic: "included",
+  Defined: "included",
+  "Unlimited Qualifying": "included",
+  Standard: "included",
+  Priority: "included",
+  Highest: "included",
+  Optional: "addon",
+  "Emergency Included": "included",
+  Enhanced: "included",
+  Reasonable: "included",
+  Core: "included",
+  "Not Included": "excluded",
+  "Add-On": "addon",
+  "Included Allowance": "included",
+  Billable: "excluded",
+  "Billable / vCIO": "addon",
+  "vCIO Allowance": "included",
+  Project: "excluded",
+  "Per Incident": "excluded",
+};
+
 // ---------------------------------------------------------------------------
 // Pre-quote checklist template. Ported from "Pre-Quote CFO Checklist".
 // ---------------------------------------------------------------------------
