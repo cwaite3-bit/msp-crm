@@ -1,11 +1,14 @@
-// Seeds an initial admin user + a starter MSP catalog (categories, service
-// tiers, products) modeled on the "Good / Better / Best" quote calculator
-// pattern. Safe to re-run — it upserts by unique name/email.
+// Seeds an initial admin user, the Bronze/Silver/Gold pricing-engine
+// settings (rate card, scope matrix, pre-quote checklist template — ported
+// from the Lockdown IT quote-builder spreadsheet, see pricing-data.ts), and
+// a starter catalog of a-la-carte products for one-off/manual line items.
+// Safe to re-run — it upserts by unique name/key/email.
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { db } from "./index";
-import { users, productCategories, serviceTiers, products, productTierPrices } from "./schema";
+import { users, productCategories, serviceTiers, products, productTierPrices, appSettings } from "./schema";
 import { eq } from "drizzle-orm";
+import { DEFAULT_RATE_CARD, DEFAULT_SCOPE_MATRIX, DEFAULT_CHECKLIST_TEMPLATE } from "../pricing-data";
 
 async function upsertUser(name: string, email: string, password: string, role: "ADMIN" | "STAFF") {
   const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -74,6 +77,13 @@ async function upsertProduct(input: {
   return row;
 }
 
+async function upsertAppSetting(key: string, value: unknown) {
+  const [existing] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  if (existing) return existing;
+  const [row] = await db.insert(appSettings).values({ key, value: value as object }).returning();
+  return row;
+}
+
 async function main() {
   console.log("Seeding admin user…");
   const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@example.com";
@@ -81,10 +91,18 @@ async function main() {
   await upsertUser("Admin", adminEmail, adminPassword, "ADMIN");
   console.log(`  admin login: ${adminEmail} / ${adminPassword} (CHANGE THIS PASSWORD)`);
 
+  console.log("Seeding pricing engine settings (rate card / scope matrix / checklist)…");
+  await upsertAppSetting("pricingRateCard", DEFAULT_RATE_CARD);
+  await upsertAppSetting("scopeMatrix", DEFAULT_SCOPE_MATRIX);
+  await upsertAppSetting("checklistTemplate", DEFAULT_CHECKLIST_TEMPLATE);
+
   console.log("Seeding service tiers…");
-  const good = await upsertTier("Good", "Business hours support, next-business-day response", 0);
-  const better = await upsertTier("Better", "Extended hours, priority response", 1);
-  const best = await upsertTier("Best", "24/7, onsite priority", 2, true);
+  // Bronze/Silver/Gold, matching the Lockdown IT quote-builder spreadsheet's
+  // plans. Silver is the default for a new quote — it's the workbook's own
+  // "usual" example scenario.
+  const good = await upsertTier("Bronze", "Managed Foundation — business hours support, standard priority", 0);
+  const better = await upsertTier("Silver", "Managed Complete — unlimited qualifying help desk, priority response", 1, true);
+  const best = await upsertTier("Gold", "Managed Premier — highest priority, vCIO strategic allowance", 2);
 
   console.log("Seeding product categories…");
   const support = await upsertCategory("Support", 0);

@@ -1,12 +1,15 @@
 import { auth } from "@/auth";
 import { getQuickBooksStatus } from "@/server/actions/quickbooks";
 import { listUsers } from "@/server/actions/users";
+import { getRateCard, getScopeMatrix } from "@/server/actions/settings";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { UsersPanel } from "./users-panel";
 import { DisconnectButton } from "./disconnect-button";
+import { RateCardPanel } from "./rate-card-panel";
+import { ScopeMatrixPanel } from "./scope-matrix-panel";
 
 export default async function SettingsPage({
   searchParams,
@@ -19,6 +22,8 @@ export default async function SettingsPage({
 
   const qbo = await getQuickBooksStatus();
   const allUsers = isAdmin ? await listUsers() : [];
+  const rateCard = await getRateCard();
+  const scopeMatrix = await getScopeMatrix();
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,6 +79,33 @@ export default async function SettingsPage({
           </CardHeader>
           <CardContent>
             <UsersPanel users={allUsers} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Rate card</CardTitle>
+            <CardDescription>
+              Drives the Discovery pricing engine on every quote — the same numbers as the Bronze/Silver/Gold
+              plans in the old quote-builder spreadsheet.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RateCardPanel rateCard={rateCard} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Scope matrix</CardTitle>
+            <CardDescription>The feature-by-plan comparison table shown on client proposals.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScopeMatrixPanel scopeMatrix={scopeMatrix} />
           </CardContent>
         </Card>
       )}

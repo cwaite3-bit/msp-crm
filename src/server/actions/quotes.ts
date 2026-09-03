@@ -12,11 +12,28 @@ import {
   customers,
 } from "@/server/db/schema";
 import { auth } from "@/auth";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { computeQuoteTotals } from "@/server/pricing";
 import { headers } from "next/headers";
+import { getRateCard, getChecklistTemplate } from "@/server/actions/settings";
+import {
+  computeAddOnLineItems,
+  computeRecommendedTier,
+  computePlanFitStatus,
+  computeManagerApprovalRequired,
+  computeTierPricing,
+  computeVcioOverageHours,
+  effectiveRiskAdjustment,
+  EMPTY_QUANTITIES,
+  DEFAULT_RISK_FACTORS,
+  EMPTY_ADD_ONS,
+  type Quantities,
+  type RiskFactors,
+  type AddOnSelections,
+} from "@/server/pricing-rules";
+import { TIER_LABELS, tierKeyFromName, type TierKey } from "@/server/pricing-data";
 
 async function requireUser() {
   const session = await auth();
@@ -47,6 +64,7 @@ async function recalcAndSaveTotals(quoteId: string) {
 export async function createQuote(customerId: string, contactId?: string) {
   const user = await requireUser();
   const [defaultTier] = await db.select().from(serviceTiers).where(eq(serviceTiers.isDefault, true)).limit(1);
+  const checklistTemplate = await getChecklistTemplate();
 
   const [quote] = await db
     .insert(quotes)
@@ -55,12 +73,240 @@ export async function createQuote(customerId: string, contactId?: string) {
       contactId: contactId || null,
       createdById: user.id,
       serviceTierId: defaultTier?.id || null,
+      checklist: checklistTemplate.map((item) => ({ key: item.key, status: "Review", note: "" })),
     })
     .returning();
 
   await db.insert(quoteEvents).values({ quoteId: quote.id, type: "CREATED" });
   revalidatePath(`/customers/${customerId}`);
   redirect(`/quotes/${quote.id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Pricing-engine intake: Discovery (environment + risk), optional add-ons,
+// pre-quote checklist, and applying a computed tier to the quote's line
+// items. See src/server/pricing-rules.ts for the underlying math.
+// ---------------------------------------------------------------------------
+
+function readQuantities(raw: unknown): Quantities {
+  return { ...EMPTY_QUANTITIES, ...(raw as Partial<Quantities>) };
+}
+function readRiskFactors(raw: unknown): RiskFactors {
+  return { ...DEFAULT_RISK_FACTORS, ...(raw as Partial<RiskFactors>) };
+}
+function readAddOns(raw: unknown): AddOnSelections {
+  return { ...EMPTY_ADD_ONS, ...(raw as Partial<AddOnSelections>) };
+}
+
+// Recomputes and caches the guardrail fields (recommended tier, risk %,
+// plan fit, manager-approval flag, margin % / status for the *currently
+// selected* tier) — same "compute then cache" pattern as
+// recalcAndSaveTotals, so the quotes list and any summary views don't need
+// to re-run the engine just to show a status badge.
+async function recalcEngineFields(quoteId: string) {
+  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+  if (!quote) return;
+
+  const rateCard = await getRateCard();
+  const quantities = readQuantities(quote.quantities);
+  const risk = readRiskFactors(quote.riskFactors);
+  const addOns = readAddOns(quote.addOnSelections);
+  const discountPct = quote.discountType === "PERCENT" && quote.discountValue ? Number(quote.discountValue) / 100 : 0;
+
+  const recommendedTier = computeRecommendedTier({ risk, users: quantities.users, vcioEnabled: addOns.vcioEnabled });
+  const riskAdjustmentPct = effectiveRiskAdjustment(risk);
+
+  let selectedTierKey: TierKey | null = null;
+  if (quote.serviceTierId) {
+    const [tierRow] = await db.select().from(serviceTiers).where(eq(serviceTiers.id, quote.serviceTierId)).limit(1);
+    selectedTierKey = tierKeyFromName(tierRow?.name);
+  }
+
+  let planFitStatus: "OK" | "REVIEW" | null = null;
+  let managerApprovalRequired = false;
+  let grossMarginPct: number | null = null;
+  let marginStatus: "OK" | "REVIEW" | null = null;
+
+  if (selectedTierKey) {
+    planFitStatus = computePlanFitStatus(recommendedTier, selectedTierKey);
+    managerApprovalRequired = computeManagerApprovalRequired({
+      planFitStatus,
+      manualRiskOverrideUsed: risk.manualOverrideEnabled,
+      discountPct,
+    });
+    const pricing = computeTierPricing({
+      quantities,
+      riskAdjustmentPct,
+      addOns,
+      complianceProgram: risk.complianceProgram,
+      rateCard,
+      tier: selectedTierKey,
+      discountPct,
+    });
+    grossMarginPct = pricing.grossMarginPct;
+    marginStatus = pricing.marginStatus;
+  }
+
+  await db
+    .update(quotes)
+    .set({
+      recommendedTier,
+      riskAdjustmentPct: riskAdjustmentPct.toFixed(4),
+      planFitStatus,
+      managerApprovalRequired,
+      grossMarginPct: grossMarginPct !== null ? grossMarginPct.toFixed(4) : null,
+      marginStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(quotes.id, quoteId));
+}
+
+export async function updateDiscovery(
+  quoteId: string,
+  data: { quantities: Quantities; riskFactors: RiskFactors }
+) {
+  await requireUser();
+  await db
+    .update(quotes)
+    .set({ quantities: data.quantities, riskFactors: data.riskFactors, updatedAt: new Date() })
+    .where(eq(quotes.id, quoteId));
+  await recalcEngineFields(quoteId);
+  revalidatePath(`/quotes/${quoteId}`);
+}
+
+export async function updateAddOns(quoteId: string, addOnSelections: AddOnSelections) {
+  await requireUser();
+  await db.update(quotes).set({ addOnSelections, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
+  await recalcEngineFields(quoteId);
+  revalidatePath(`/quotes/${quoteId}`);
+}
+
+export async function updateChecklistItem(
+  quoteId: string,
+  key: string,
+  patch: { status?: string; note?: string }
+) {
+  await requireUser();
+  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+  if (!quote) return;
+  const checklist = (quote.checklist as { key: string; status: string; note?: string }[]) || [];
+  const next = checklist.map((item) => (item.key === key ? { ...item, ...patch } : item));
+  await db.update(quotes).set({ checklist: next, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
+  revalidatePath(`/quotes/${quoteId}`);
+}
+
+// Sets the quote's selected tier and regenerates its ENGINE-sourced line
+// items from the pricing engine. Hand-added/"add on the fly" (MANUAL) line
+// items are left untouched. Safe to call repeatedly, e.g. after editing
+// Discovery or add-ons and wanting the line items to catch up.
+export async function applyEngineTier(quoteId: string, tier: TierKey) {
+  await requireUser();
+  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+  if (!quote) throw new Error("Quote not found");
+
+  const allTiers = await db.select().from(serviceTiers);
+  const tierRow = allTiers.find((t) => tierKeyFromName(t.name) === tier);
+  if (!tierRow) {
+    throw new Error(`No "${TIER_LABELS[tier]}" service tier is configured. Check Settings → Catalog.`);
+  }
+
+  const rateCard = await getRateCard();
+  const quantities = readQuantities(quote.quantities);
+  const risk = readRiskFactors(quote.riskFactors);
+  const addOns = readAddOns(quote.addOnSelections);
+  const discountPct = quote.discountType === "PERCENT" && quote.discountValue ? Number(quote.discountValue) / 100 : 0;
+  const riskAdjustmentPct = effectiveRiskAdjustment(risk);
+
+  const pricing = computeTierPricing({
+    quantities,
+    riskAdjustmentPct,
+    addOns,
+    complianceProgram: risk.complianceProgram,
+    rateCard,
+    tier,
+    discountPct,
+  });
+
+  await db.update(quotes).set({ serviceTierId: tierRow.id, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
+
+  await db
+    .delete(quoteLineItems)
+    .where(and(eq(quoteLineItems.quoteId, quoteId), eq(quoteLineItems.source, "ENGINE")));
+
+  const manualItems = await db.select().from(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
+  let sortOrder = manualItems.length;
+  const rows: (typeof quoteLineItems.$inferInsert)[] = [];
+
+  const push = (
+    categoryName: string,
+    name: string,
+    amount: number,
+    billingType: "RECURRING_MONTHLY" | "ONE_TIME",
+    description?: string
+  ) => {
+    if (Math.abs(amount) < 0.005) return;
+    rows.push({
+      quoteId,
+      source: "ENGINE",
+      categoryName,
+      name,
+      description: description ?? null,
+      unitLabel: "flat",
+      billingType,
+      quantity: "1",
+      unitPrice: amount.toFixed(2),
+      lineTotal: amount.toFixed(2),
+      sortOrder: sortOrder++,
+    });
+  };
+
+  push(
+    "Managed Services",
+    `Managed IT Services — ${TIER_LABELS[tier]} Plan`,
+    pricing.baseSubtotal + pricing.riskPremium,
+    "RECURRING_MONTHLY",
+    pricing.riskPremium > 0
+      ? `Includes a ${(riskAdjustmentPct * 100).toFixed(1)}% risk-adjusted premium based on Discovery`
+      : undefined
+  );
+
+  if (pricing.minimumMrrAdjustment > 0) {
+    push(
+      "Managed Services",
+      "Minimum monthly engagement adjustment",
+      pricing.minimumMrrAdjustment,
+      "RECURRING_MONTHLY",
+      `${TIER_LABELS[tier]} plan minimum is $${rateCard.tiers[tier].minimumMrr.toLocaleString()}/mo`
+    );
+  }
+
+  for (const item of computeAddOnLineItems(addOns, risk.complianceProgram, rateCard)) {
+    push("Add-Ons", item.label, item.amount, "RECURRING_MONTHLY");
+  }
+
+  const vcioOverageHours = computeVcioOverageHours(addOns, rateCard.tiers[tier].vcioIncludedHoursPerMonth);
+  if (vcioOverageHours > 0) {
+    push(
+      "Add-Ons",
+      `vCIO overage (${vcioOverageHours} hrs beyond plan allowance)`,
+      pricing.vcioOverageSell,
+      "RECURRING_MONTHLY"
+    );
+  }
+
+  const onboardingHoursFee = pricing.onboardingFeeSell - addOns.oneTimeProjectSell;
+  if (onboardingHoursFee > 0) {
+    push("Onboarding", "Onboarding / Stabilization", onboardingHoursFee, "ONE_TIME");
+  }
+  if (addOns.oneTimeProjectSell > 0) {
+    push("Onboarding", "One-Time Project / Remediation", addOns.oneTimeProjectSell, "ONE_TIME");
+  }
+
+  if (rows.length) await db.insert(quoteLineItems).values(rows);
+
+  await recalcEngineFields(quoteId);
+  await recalcAndSaveTotals(quoteId);
+  revalidatePath(`/quotes/${quoteId}`);
 }
 
 export async function updateQuoteMeta(
@@ -97,6 +343,7 @@ export async function updateQuoteMeta(
     .where(eq(quotes.id, quoteId));
 
   await recalcAndSaveTotals(quoteId);
+  await recalcEngineFields(quoteId); // discount % feeds the manager-approval/margin guardrails
   revalidatePath(`/quotes/${quoteId}`);
 }
 

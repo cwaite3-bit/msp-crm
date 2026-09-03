@@ -8,6 +8,13 @@
       "when": 1786714961553,
       "tag": "0000_kind_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788401104226,
+      "tag": "0001_black_professor_monster",
+      "breakpoints": true
     }
   ]
 }

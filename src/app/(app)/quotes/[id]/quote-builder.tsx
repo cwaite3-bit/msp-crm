@@ -118,7 +118,14 @@ export function QuoteBuilder({
               {group.items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="w-[40%]">
-                    <div className="font-medium text-slate-900">{item.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-900">{item.name}</span>
+                      {item.source === "ENGINE" && (
+                        <span className="rounded-full border border-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          Auto
+                        </span>
+                      )}
+                    </div>
                     {item.description && <div className="text-xs text-slate-500">{item.description}</div>}
                   </TableCell>
                   <TableCell className="w-28">
