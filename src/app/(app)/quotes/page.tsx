@@ -37,8 +37,25 @@ export default async function QuotesPage() {
                       #{q.quoteNumber}
                     </Link>
                   </TableCell>
-                  <TableCell>{q.customerName}</TableCell>
-                  <TableCell className="text-slate-500">{q.title}</TableCell>
+                  <TableCell>
+                    {q.customerId ? (
+                      <a
+                        href={`/customers/${q.customerId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-slate-900 hover:text-slate-600 hover:underline"
+                      >
+                        {q.customerName}
+                      </a>
+                    ) : (
+                      q.customerName
+                    )}
+                  </TableCell>
+                  <TableCell className="text-slate-500">
+                    <Link href={`/quotes/${q.id}`} className="hover:text-slate-900 hover:underline">
+                      {q.title}
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={q.status} />
                   </TableCell>
