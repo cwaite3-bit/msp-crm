@@ -68,9 +68,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
         <Link href={`/customers/${quote.customerId}`} className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
           <ArrowLeft className="h-3.5 w-3.5" /> {customer?.name}
         </Link>
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-semibold text-slate-900">
                 Quote #{quote.quoteNumber} · {quote.title}
               </h1>
@@ -121,8 +121,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="flex flex-col gap-6 lg:col-span-2">
           <Card>
             <CardHeader>
               <CardTitle>Line items</CardTitle>

@@ -133,32 +133,58 @@ export function RateCardPanel({ rateCard: initial }: { rateCard: RateCard }) {
       {groups.map((group) => (
         <div key={group}>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">{group}</p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Assumption</TableHead>
-                {TIER_KEYS.map((t) => (
-                  <TableHead key={t}>{TIER_LABELS[t]}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {TIER_FIELDS.filter((f) => f.group === group).map((f) => (
-                <TableRow key={f.key}>
-                  <TableCell className="text-sm text-slate-600">{f.label}</TableCell>
+
+          {/* Below md: a wide Bronze/Silver/Gold table is unreadable, so each
+              assumption becomes its own card with one row per tier instead. */}
+          <div className="flex flex-col gap-3 md:hidden">
+            {TIER_FIELDS.filter((f) => f.group === group).map((f) => (
+              <div key={f.key} className="rounded-lg border border-slate-200 p-3">
+                <p className="mb-2 text-sm font-medium text-slate-700">{f.label}</p>
+                <div className="flex flex-col gap-2">
                   {TIER_KEYS.map((t) => (
-                    <TableCell key={t}>
+                    <div key={t} className="flex items-center justify-between gap-3">
+                      <span className="text-xs text-slate-500">{TIER_LABELS[t]}</span>
                       <NumInput
                         value={rateCard.tiers[t][f.key]}
                         format={f.format}
                         onChange={(v) => setTierField(t, f.key, v)}
                       />
-                    </TableCell>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* md and up: the full side-by-side comparison table */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Assumption</TableHead>
+                  {TIER_KEYS.map((t) => (
+                    <TableHead key={t}>{TIER_LABELS[t]}</TableHead>
                   ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {TIER_FIELDS.filter((f) => f.group === group).map((f) => (
+                  <TableRow key={f.key}>
+                    <TableCell className="text-sm text-slate-600">{f.label}</TableCell>
+                    {TIER_KEYS.map((t) => (
+                      <TableCell key={t}>
+                        <NumInput
+                          value={rateCard.tiers[t][f.key]}
+                          format={f.format}
+                          onChange={(v) => setTierField(t, f.key, v)}
+                        />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       ))}
 
@@ -234,7 +260,7 @@ export function RateCardPanel({ rateCard: initial }: { rateCard: RateCard }) {
         </Table>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button onClick={save} disabled={pending}>{pending ? "Saving…" : "Save rate card"}</Button>
         <Button variant="outline" onClick={reset} disabled={pending}>Reset to spreadsheet defaults</Button>
       </div>

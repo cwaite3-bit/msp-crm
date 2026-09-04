@@ -52,7 +52,7 @@ export function QuoteActions({ quote }: { quote: Quote }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button variant="outline" size="sm" onClick={copyLink}>
         <Link2 className="h-4 w-4" /> Copy client link
       </Button>

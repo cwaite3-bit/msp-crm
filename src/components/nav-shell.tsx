@@ -1,12 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Users, FileText, Package, Settings, LayoutDashboard, LogOut } from "lucide-react";
+import { Users, FileText, Package, Settings, LayoutDashboard, LogOut, Menu, X } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -26,10 +27,47 @@ export function NavShell({
   userRole: string;
 }) {
   const pathname = usePathname();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Close the mobile drawer automatically whenever the route changes, so
+  // tapping a nav link doesn't leave the drawer open over the new page.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
+    <div className="flex min-h-screen flex-col lg:flex-row">
+      {/* Mobile-only top bar with hamburger toggle. Fixed so it stays
+          reachable regardless of scroll position; hidden entirely at lg:
+          and up, where the sidebar below is always visible instead. */}
+      <div className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 lg:hidden">
+        <Image src="/lockdown-logo.png" alt="Lockdown IT" width={5052} height={1264} className="h-7 w-auto" priority />
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          {mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </Button>
+      </div>
+
+      {/* Dimmed backdrop behind the open mobile drawer - tap to close */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-in-out",
+          "lg:static lg:z-auto lg:translate-x-0",
+          mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
         <div className="flex h-20 items-center border-b border-slate-200 px-5">
           <Image
             src="/lockdown-logo.png"
@@ -70,8 +108,9 @@ export function NavShell({
           </Button>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl p-8">{children}</div>
+
+      <main className="flex-1 overflow-y-auto pt-14 lg:pt-0">
+        <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">{children}</div>
       </main>
     </div>
   );
