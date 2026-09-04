@@ -430,8 +430,11 @@ export function computeTierPricing(input: {
   rateCard: RateCard;
   tier: TierKey;
   discountPct: number;
+  // When true, skip this tier's minimum-MRR floor entirely (treat it as
+  // $0) for a quote that's been marked as exempt. Defaults to false.
+  waiveMinimumMrr?: boolean;
 }): TierPricingResult {
-  const { quantities: q, riskAdjustmentPct, addOns, complianceProgram, rateCard, tier, discountPct } = input;
+  const { quantities: q, riskAdjustmentPct, addOns, complianceProgram, rateCard, tier, discountPct, waiveMinimumMrr } = input;
   const t = rateCard.tiers[tier];
   const scale = t.planPriceScale;
   const totalNetworkDevices = q.firewalls + q.switches + q.aps + q.otherNetworkDevices;
@@ -453,7 +456,8 @@ export function computeTierPricing(input: {
   const vcioOverageCost = vcioOverageHours * rateCard.optionalServices.vcioOverageDirectCostPerHour;
 
   const grossMrrBeforeFloor = baseSubtotal + riskPremium + addOnMrr + vcioOverageSell;
-  const grossMrrBeforeDiscount = Math.max(t.minimumMrr, grossMrrBeforeFloor);
+  const minimumMrrFloor = waiveMinimumMrr ? 0 : t.minimumMrr;
+  const grossMrrBeforeDiscount = Math.max(minimumMrrFloor, grossMrrBeforeFloor);
   const minimumMrrAdjustment = grossMrrBeforeDiscount - grossMrrBeforeFloor;
 
   const discountAmount = grossMrrBeforeDiscount * discountPct;
@@ -514,6 +518,7 @@ export function computeAllTiers(input: {
   addOns: AddOnSelections;
   rateCard: RateCard;
   discountPct: number;
+  waiveMinimumMrr?: boolean;
 }): Record<TierKey, TierPricingResult> {
   const riskAdjustmentPct = effectiveRiskAdjustment(input.risk);
   const result = {} as Record<TierKey, TierPricingResult>;
@@ -526,6 +531,7 @@ export function computeAllTiers(input: {
       rateCard: input.rateCard,
       tier,
       discountPct: input.discountPct,
+      waiveMinimumMrr: input.waiveMinimumMrr,
     });
   }
   return result;

@@ -54,7 +54,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   const risk: RiskFactors = { ...DEFAULT_RISK_FACTORS, ...(quote.riskFactors as Partial<RiskFactors>) };
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
   const discountPct = quote.discountType === "PERCENT" && quote.discountValue ? Number(quote.discountValue) / 100 : 0;
-  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct });
+  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct, waiveMinimumMrr: quote.waiveMinimumMrr });
   const recommendedTier = computeRecommendedTier({ risk, users: quantities.users, vcioEnabled: addOns.vcioEnabled });
 
   let selectedTierKey = null as ReturnType<typeof tierKeyFromName>;

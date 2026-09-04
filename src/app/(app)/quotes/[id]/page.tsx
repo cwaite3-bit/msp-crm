@@ -50,7 +50,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
   const discountPct = quote.discountType === "PERCENT" && quote.discountValue ? Number(quote.discountValue) / 100 : 0;
 
-  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct });
+  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct, waiveMinimumMrr: quote.waiveMinimumMrr });
   const recommendedTier = computeRecommendedTier({ risk, users: quantities.users, vcioEnabled: addOns.vcioEnabled });
 
   let selectedTierKey = null as ReturnType<typeof tierKeyFromName>;
@@ -116,6 +116,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             manualRiskOverrideUsed={risk.manualOverrideEnabled}
             checklistDone={checklistDone}
             checklistTotal={checklistTemplate.length}
+            waiveMinimumMrr={quote.waiveMinimumMrr}
           />
         </CardContent>
       </Card>

@@ -15,6 +15,13 @@
       "when": 1788401104226,
       "tag": "0001_black_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788472857090,
+      "tag": "0002_nebulous_ultragirl",
+      "breakpoints": true
     }
   ]
 }

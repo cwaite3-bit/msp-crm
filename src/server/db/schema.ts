@@ -271,6 +271,13 @@ export const quotes = pgTable(
     discountValue: numeric("discount_value", { precision: 12, scale: 2 }),
     taxRatePct: numeric("tax_rate_pct", { precision: 5, scale: 2 }),
 
+    // When true, this quote is exempt from the selected tier's minimum-MRR
+    // floor (Settings → Rate card). Set per quote for genuinely small
+    // opportunities where the standard floor would overprice the customer;
+    // skips the floor in the pricing engine and suppresses the "Minimum
+    // monthly engagement adjustment" line item. Persists until unset.
+    waiveMinimumMrr: boolean("waive_minimum_mrr").notNull().default(false),
+
     subtotalMonthly: numeric("subtotal_monthly", { precision: 12, scale: 2 }).notNull().default("0"),
     subtotalOneTime: numeric("subtotal_one_time", { precision: 12, scale: 2 }).notNull().default("0"),
     totalMonthly: numeric("total_monthly", { precision: 12, scale: 2 }).notNull().default("0"),

@@ -1,0 +1,1 @@
+ALTER TABLE "quotes" ADD COLUMN "waive_minimum_mrr" boolean DEFAULT false NOT NULL;

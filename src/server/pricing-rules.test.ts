@@ -109,9 +109,26 @@ test("Gold tier pricing matches CFO Model column D exactly", () => {
 });
 
 test("minimum MRR floor applies for a tiny environment", () => {
-  const tiny: Quantities = { users: 2, workstations: 3, servers: 0, locations: 1, firewalls: 1, switches: 1, aps: 1, otherNetworkDevices: 0 };
+  // 1 workstation and nothing else prices below the Bronze floor
+  // ($105 base vs. a $200 minimum), so the floor should kick in.
+  const tiny: Quantities = { users: 0, workstations: 1, servers: 0, locations: 0, firewalls: 0, switches: 0, aps: 0, otherNetworkDevices: 0 };
   const flatRisk: RiskFactors = { ...risk, documentationQuality: "Excellent", legacySystems: "None", multiVendor: "No", criticality: "Standard", incidentHistory: "Normal", afterHours: "Business Hours" };
   const all = computeAllTiers({ quantities: tiny, risk: flatRisk, addOns: EMPTY_ADD_ONS, rateCard: DEFAULT_RATE_CARD, discountPct: 0 });
-  assert.equal(all.bronze.grossMrrBeforeDiscount, 1600); // floored at the Bronze minimum
+  assert.equal(all.bronze.grossMrrBeforeDiscount, 200); // floored at the Bronze minimum
   assert.ok(all.bronze.minimumMrrAdjustment > 0);
+});
+
+test("waiveMinimumMrr skips the floor entirely", () => {
+  const tiny: Quantities = { users: 0, workstations: 1, servers: 0, locations: 0, firewalls: 0, switches: 0, aps: 0, otherNetworkDevices: 0 };
+  const flatRisk: RiskFactors = { ...risk, documentationQuality: "Excellent", legacySystems: "None", multiVendor: "No", criticality: "Standard", incidentHistory: "Normal", afterHours: "Business Hours" };
+  const all = computeAllTiers({
+    quantities: tiny,
+    risk: flatRisk,
+    addOns: EMPTY_ADD_ONS,
+    rateCard: DEFAULT_RATE_CARD,
+    discountPct: 0,
+    waiveMinimumMrr: true,
+  });
+  assert.equal(all.bronze.grossMrrBeforeDiscount, 105); // raw component pricing, floor skipped
+  assert.equal(all.bronze.minimumMrrAdjustment, 0);
 });

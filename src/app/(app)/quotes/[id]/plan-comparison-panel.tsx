@@ -4,9 +4,11 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
-import { applyEngineTier } from "@/server/actions/quotes";
+import { applyEngineTier, setWaiveMinimumMrr } from "@/server/actions/quotes";
 import { cn } from "@/lib/utils";
 import { TIER_KEYS, TIER_LABELS, type TierKey } from "@/server/pricing-data";
 import type { TierPricingResult } from "@/server/pricing-rules";
@@ -31,6 +33,7 @@ export function PlanComparisonPanel({
   manualRiskOverrideUsed,
   checklistDone,
   checklistTotal,
+  waiveMinimumMrr,
 }: {
   quoteId: string;
   allTiers: Record<TierKey, TierPricingResult>;
@@ -42,6 +45,7 @@ export function PlanComparisonPanel({
   manualRiskOverrideUsed: boolean;
   checklistDone: number;
   checklistTotal: number;
+  waiveMinimumMrr: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -51,6 +55,14 @@ export function PlanComparisonPanel({
       await applyEngineTier(quoteId, tier);
       router.refresh();
       toast.success(`Applied ${TIER_LABELS[tier]} plan to line items`);
+    });
+  }
+
+  function toggleWaiveMinimum(checked: boolean) {
+    startTransition(async () => {
+      await setWaiveMinimumMrr(quoteId, checked);
+      router.refresh();
+      toast.success(checked ? "Minimum monthly engagement waived for this quote" : "Minimum monthly engagement restored");
     });
   }
 
@@ -64,6 +76,25 @@ export function PlanComparisonPanel({
         <GuardrailBadge label="Checklist" ok={checklistOk} />
         <GuardrailBadge label="Risk override" ok={!manualRiskOverrideUsed} />
         {managerApprovalRequired && <Badge variant="destructive">Manager approval required</Badge>}
+      </div>
+
+      <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <Checkbox
+          id="waive-minimum-mrr"
+          checked={waiveMinimumMrr}
+          disabled={pending}
+          onCheckedChange={(checked) => toggleWaiveMinimum(checked === true)}
+          className="mt-0.5"
+        />
+        <div>
+          <Label htmlFor="waive-minimum-mrr" className="cursor-pointer text-sm font-medium text-slate-900">
+            Waive minimum monthly engagement for this quote
+          </Label>
+          <p className="text-xs text-slate-500">
+            For a small opportunity where the standard plan minimum doesn&apos;t apply. Skips the minimum-MRR floor
+            for all three plans below and removes the adjustment line item. Saved on this quote.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

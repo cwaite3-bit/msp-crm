@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +29,18 @@ export function QuoteMetaForm({ quote, tiers, contacts }: { quote: Quote; tiers:
   );
   const [notesToClient, setNotesToClient] = useState(quote.notesToClient ?? "");
   const [internalNotes, setInternalNotes] = useState(quote.internalNotes ?? "");
+
+  // The service tier can also be changed elsewhere (the Plan Comparison
+  // panel's "Use this plan" / "Re-apply plan" buttons), which updates
+  // `quote.serviceTierId` via a server action + router.refresh(). Because
+  // useState() only reads its initializer on mount, this form's local
+  // dropdown would otherwise keep showing whatever tier was selected when
+  // the page first loaded, and clicking "Save settings" would silently
+  // write that stale value back over the correct one. Resync whenever the
+  // prop changes.
+  useEffect(() => {
+    setServiceTierId(quote.serviceTierId ?? "none");
+  }, [quote.serviceTierId]);
 
   function save(extra: Partial<Parameters<typeof updateQuoteMeta>[1]> = {}) {
     startTransition(async () => {

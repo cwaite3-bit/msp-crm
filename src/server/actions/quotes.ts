@@ -142,6 +142,7 @@ async function recalcEngineFields(quoteId: string) {
       rateCard,
       tier: selectedTierKey,
       discountPct,
+      waiveMinimumMrr: quote.waiveMinimumMrr,
     });
     grossMarginPct = pricing.grossMarginPct;
     marginStatus = pricing.marginStatus;
@@ -240,6 +241,7 @@ export async function applyEngineTier(quoteId: string, tier: TierKey) {
     rateCard,
     tier,
     discountPct,
+    waiveMinimumMrr: quote.waiveMinimumMrr,
   });
 
   await db.update(quotes).set({ serviceTierId: tierRow.id, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
@@ -321,6 +323,31 @@ export async function applyEngineTier(quoteId: string, tier: TierKey) {
 
   await recalcEngineFields(quoteId);
   await recalcAndSaveTotals(quoteId);
+  revalidatePath(`/quotes/${quoteId}`);
+}
+
+// Waives (or restores) the selected tier's minimum-MRR floor for this one
+// quote — for a genuinely small opportunity where the standard floor would
+// overprice the customer. Persists on the quote itself (not the rate
+// card), so it survives refresh and applies every time the plan is
+// re-priced. If a tier is already selected, immediately re-applies it so
+// the "Minimum monthly engagement adjustment" line item appears/disappears
+// without a separate manual re-apply click.
+export async function setWaiveMinimumMrr(quoteId: string, waive: boolean) {
+  await requireUser();
+  await db.update(quotes).set({ waiveMinimumMrr: waive, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
+
+  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+  if (quote?.serviceTierId) {
+    const [tierRow] = await db.select().from(serviceTiers).where(eq(serviceTiers.id, quote.serviceTierId)).limit(1);
+    const tierKey = tierKeyFromName(tierRow?.name);
+    if (tierKey) {
+      await applyEngineTier(quoteId, tierKey);
+      return;
+    }
+  }
+
+  await recalcEngineFields(quoteId);
   revalidatePath(`/quotes/${quoteId}`);
 }
 
