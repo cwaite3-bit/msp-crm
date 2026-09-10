@@ -117,6 +117,12 @@ export function RateCardPanel({ rateCard: initial }: { rateCard: RateCard }) {
   }
 
   const groups = Array.from(new Set(TIER_FIELDS.map((f) => f.group)));
+  // Note: Microsoft 365 licensing pricing lives at Settings → Microsoft 365
+  // plans now (per-plan pricing), not here — this flat
+  // microsoft365LicensingPerSeat rate card field is no longer read by the
+  // pricing engine. It's kept in the RateCard type/schema (unused by any
+  // current UI) only so the one-time db:migrate-m365-addon backfill script
+  // can still read the old flat rate a pre-migration quote priced at.
   const optionalServiceRows: { key: SellCostKey; label: string }[] = [
     { key: "endpointBackupPerWorkstation", label: "Endpoint backup ($/protected workstation/mo)" },
     { key: "serverBackupPerServer", label: "Server backup ($/protected server/mo)" },
@@ -124,7 +130,6 @@ export function RateCardPanel({ rateCard: initial }: { rateCard: RateCard }) {
     { key: "managedBcdrPerServer", label: "Managed BCDR per server ($/protected server/mo)" },
     { key: "advancedEmailSecurityPerUser", label: "Advanced email security ($/user/mo)" },
     { key: "securityAwarenessTrainingPerUser", label: "Security awareness training ($/user/mo)" },
-    { key: "microsoft365LicensingPerSeat", label: "Microsoft 365 licensing allowance ($/seat/mo)" },
     { key: "includedOnsiteHours", label: "Included onsite hours ($/hr)" },
   ];
 

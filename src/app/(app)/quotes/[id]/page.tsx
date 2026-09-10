@@ -3,7 +3,7 @@ import { quotes, quoteLineItems, customers, contacts, serviceTiers } from "@/ser
 import { eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { listCatalog } from "@/server/actions/catalog";
-import { getRateCard, getChecklistTemplate } from "@/server/actions/settings";
+import { getRateCard, getChecklistTemplate, getM365Plans } from "@/server/actions/settings";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -45,12 +45,13 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
 
   const rateCard = await getRateCard();
   const checklistTemplate = await getChecklistTemplate();
+  const m365Plans = await getM365Plans();
   const quantities: Quantities = { ...EMPTY_QUANTITIES, ...(quote.quantities as Partial<Quantities>) };
   const risk: RiskFactors = { ...DEFAULT_RISK_FACTORS, ...(quote.riskFactors as Partial<RiskFactors>) };
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
   const discountPct = quote.discountType === "PERCENT" && quote.discountValue ? Number(quote.discountValue) / 100 : 0;
 
-  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct, waiveMinimumMrr: quote.waiveMinimumMrr });
+  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct, waiveMinimumMrr: quote.waiveMinimumMrr, m365Plans });
   const recommendedTier = computeRecommendedTier({ risk, users: quantities.users, vcioEnabled: addOns.vcioEnabled });
 
   let selectedTierKey = null as ReturnType<typeof tierKeyFromName>;
@@ -96,7 +97,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           <CardTitle>Optional services &amp; add-ons</CardTitle>
         </CardHeader>
         <CardContent>
-          <AddOnsForm quoteId={quote.id} addOns={addOns} />
+          <AddOnsForm quoteId={quote.id} addOns={addOns} m365Plans={m365Plans} totalUsers={quantities.users} />
         </CardContent>
       </Card>
 

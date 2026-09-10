@@ -17,7 +17,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { computeQuoteTotals } from "@/server/pricing";
 import { headers } from "next/headers";
-import { getRateCard, getChecklistTemplate } from "@/server/actions/settings";
+import { getRateCard, getChecklistTemplate, getM365Plans } from "@/server/actions/settings";
 import {
   computeAddOnLineItems,
   computeRecommendedTier,
@@ -108,6 +108,7 @@ async function recalcEngineFields(quoteId: string) {
   if (!quote) return;
 
   const rateCard = await getRateCard();
+  const m365Plans = await getM365Plans();
   const quantities = readQuantities(quote.quantities);
   const risk = readRiskFactors(quote.riskFactors);
   const addOns = readAddOns(quote.addOnSelections);
@@ -143,6 +144,7 @@ async function recalcEngineFields(quoteId: string) {
       tier: selectedTierKey,
       discountPct,
       waiveMinimumMrr: quote.waiveMinimumMrr,
+      m365Plans,
     });
     grossMarginPct = pricing.grossMarginPct;
     marginStatus = pricing.marginStatus;
@@ -227,6 +229,7 @@ export async function applyEngineTier(quoteId: string, tier: TierKey) {
   }
 
   const rateCard = await getRateCard();
+  const m365Plans = await getM365Plans();
   const quantities = readQuantities(quote.quantities);
   const risk = readRiskFactors(quote.riskFactors);
   const addOns = readAddOns(quote.addOnSelections);
@@ -242,6 +245,7 @@ export async function applyEngineTier(quoteId: string, tier: TierKey) {
     tier,
     discountPct,
     waiveMinimumMrr: quote.waiveMinimumMrr,
+    m365Plans,
   });
 
   await db.update(quotes).set({ serviceTierId: tierRow.id, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
@@ -297,7 +301,7 @@ export async function applyEngineTier(quoteId: string, tier: TierKey) {
     );
   }
 
-  for (const item of computeAddOnLineItems(addOns, risk.complianceProgram, rateCard)) {
+  for (const item of computeAddOnLineItems(addOns, risk.complianceProgram, rateCard, m365Plans)) {
     push("Add-Ons", item.label, item.amount, "RECURRING_MONTHLY");
   }
 

@@ -22,6 +22,7 @@ import {
   type RateCard,
   type TierKey,
   type ComplianceFramework,
+  type M365Plan,
   TIER_KEYS,
 } from "./pricing-data";
 
@@ -79,6 +80,15 @@ export const DEFAULT_RISK_FACTORS: RiskFactors = {
 
 export type BackupProfile = "None" | "Endpoint Backup" | "Server Backup" | "Managed Backup" | "Managed BCDR";
 
+// One row of Microsoft 365 / security / identity licensing on a quote: a
+// reference to a plan in app_settings.m365Plans (pricing-data.ts M365Plan)
+// plus how many seats of that specific plan the customer needs. A quote can
+// carry several of these at once (e.g. 8 Business Basic + 4 Business Premium
+// + 12 Defender for Business) — this is what lets "how many users" and "how
+// many of which Microsoft 365 plan" be answered separately and per-plan,
+// instead of one flat seat count at one flat rate.
+export type M365Selection = { planId: string; seats: number };
+
 export type AddOnSelections = {
   vcioEnabled: boolean;
   vcioHoursPerMonth: number;
@@ -89,8 +99,7 @@ export type AddOnSelections = {
   emailSecuritySeats: number;
   trainingEnabled: boolean;
   trainingSeats: number;
-  m365Enabled: boolean;
-  m365Seats: number;
+  m365Selections: M365Selection[];
   includedOnsiteHoursPerMonth: number;
   customMonthlyAddOnSell: number;
   customMonthlyAddOnCost: number;
@@ -108,14 +117,37 @@ export const EMPTY_ADD_ONS: AddOnSelections = {
   emailSecuritySeats: 0,
   trainingEnabled: false,
   trainingSeats: 0,
-  m365Enabled: false,
-  m365Seats: 0,
+  m365Selections: [],
   includedOnsiteHoursPerMonth: 0,
   customMonthlyAddOnSell: 0,
   customMonthlyAddOnCost: 0,
   oneTimeProjectSell: 0,
   oneTimeProjectCost: 0,
 };
+
+// Sums seats × plan price across every selected M365/security/identity plan
+// row. Unknown/inactive-but-still-referenced plan ids are looked up by id
+// regardless of `active` (a plan retired after being quoted must keep
+// pricing an already-selected row); a planId with no matching plan at all
+// (e.g. deleted from Settings) is skipped rather than throwing, so a quote
+// never breaks because a plan definition disappeared.
+export function computeM365Mrr(
+  selections: M365Selection[],
+  plans: M365Plan[]
+): { sell: number; cost: number; totalSeats: number } {
+  let sell = 0;
+  let cost = 0;
+  let totalSeats = 0;
+  for (const selection of selections) {
+    if (!selection.seats) continue;
+    const plan = plans.find((p) => p.id === selection.planId);
+    if (!plan) continue;
+    sell += selection.seats * plan.sell;
+    cost += selection.seats * plan.cost;
+    totalSeats += selection.seats;
+  }
+  return { sell, cost, totalSeats };
+}
 
 // ---------------------------------------------------------------------------
 // Risk adjustment — Discovery!B35, weights documented on the Settings sheet
@@ -304,10 +336,11 @@ function complianceSellCost(program: ComplianceFramework, rateCard: RateCard) {
 export function computeAddOnMrr(
   addOns: AddOnSelections,
   complianceProgram: ComplianceFramework,
-  rateCard: RateCard
+  rateCard: RateCard,
+  m365Plans: M365Plan[] = []
 ): { sell: number; cost: number } {
   const backup = backupSellCost(addOns, rateCard);
-  const { advancedEmailSecurityPerUser, securityAwarenessTrainingPerUser, microsoft365LicensingPerSeat, includedOnsiteHours } =
+  const { advancedEmailSecurityPerUser, securityAwarenessTrainingPerUser, includedOnsiteHours } =
     rateCard.optionalServices;
   const compliance = complianceSellCost(complianceProgram, rateCard);
 
@@ -317,16 +350,15 @@ export function computeAddOnMrr(
   const trainingSell = addOns.trainingEnabled ? addOns.trainingSeats * securityAwarenessTrainingPerUser.sell : 0;
   const trainingCost = addOns.trainingEnabled ? addOns.trainingSeats * securityAwarenessTrainingPerUser.cost : 0;
 
-  const m365Sell = addOns.m365Enabled ? addOns.m365Seats * microsoft365LicensingPerSeat.sell : 0;
-  const m365Cost = addOns.m365Enabled ? addOns.m365Seats * microsoft365LicensingPerSeat.cost : 0;
+  const m365 = computeM365Mrr(addOns.m365Selections, m365Plans);
 
   const onsiteSell = addOns.includedOnsiteHoursPerMonth * includedOnsiteHours.sell;
   const onsiteCost = addOns.includedOnsiteHoursPerMonth * includedOnsiteHours.cost;
 
   const sell =
-    backup.sell + emailSell + trainingSell + m365Sell + onsiteSell + compliance.sell + addOns.customMonthlyAddOnSell;
+    backup.sell + emailSell + trainingSell + m365.sell + onsiteSell + compliance.sell + addOns.customMonthlyAddOnSell;
   const cost =
-    backup.cost + emailCost + trainingCost + m365Cost + onsiteCost + compliance.cost + addOns.customMonthlyAddOnCost;
+    backup.cost + emailCost + trainingCost + m365.cost + onsiteCost + compliance.cost + addOns.customMonthlyAddOnCost;
 
   return { sell, cost };
 }
@@ -339,7 +371,8 @@ export type AddOnLineItem = { label: string; amount: number };
 export function computeAddOnLineItems(
   addOns: AddOnSelections,
   complianceProgram: ComplianceFramework,
-  rateCard: RateCard
+  rateCard: RateCard,
+  m365Plans: M365Plan[] = []
 ): AddOnLineItem[] {
   const items: AddOnLineItem[] = [];
   const backup = backupSellCost(addOns, rateCard);
@@ -364,10 +397,16 @@ export function computeAddOnLineItems(
       amount: addOns.trainingSeats * rateCard.optionalServices.securityAwarenessTrainingPerUser.sell,
     });
   }
-  if (addOns.m365Enabled && addOns.m365Seats > 0) {
+  // One line per selected Microsoft 365 / security / identity plan, rather
+  // than a single bundled "M365 licensing" line — so the quote itemizes
+  // exactly which plan each block of seats is on.
+  for (const selection of addOns.m365Selections) {
+    if (!selection.seats) continue;
+    const plan = m365Plans.find((p) => p.id === selection.planId);
+    if (!plan) continue;
     items.push({
-      label: `Microsoft 365 Licensing Allowance (${addOns.m365Seats} seats)`,
-      amount: addOns.m365Seats * rateCard.optionalServices.microsoft365LicensingPerSeat.sell,
+      label: `${plan.name} (${selection.seats} seats)`,
+      amount: selection.seats * plan.sell,
     });
   }
   if (addOns.includedOnsiteHoursPerMonth > 0) {
@@ -433,8 +472,13 @@ export function computeTierPricing(input: {
   // When true, skip this tier's minimum-MRR floor entirely (treat it as
   // $0) for a quote that's been marked as exempt. Defaults to false.
   waiveMinimumMrr?: boolean;
+  // Microsoft 365 / security / identity plan catalog (Settings → Microsoft
+  // 365 plans) that addOns.m365Selections' planIds resolve against.
+  // Defaults to [] so callers that don't pass it (older tests, etc.) still
+  // work — any m365Selections just price at $0 rather than throwing.
+  m365Plans?: M365Plan[];
 }): TierPricingResult {
-  const { quantities: q, riskAdjustmentPct, addOns, complianceProgram, rateCard, tier, discountPct, waiveMinimumMrr } = input;
+  const { quantities: q, riskAdjustmentPct, addOns, complianceProgram, rateCard, tier, discountPct, waiveMinimumMrr, m365Plans = [] } = input;
   const t = rateCard.tiers[tier];
   const scale = t.planPriceScale;
   const totalNetworkDevices = q.firewalls + q.switches + q.aps + q.otherNetworkDevices;
@@ -449,7 +493,7 @@ export function computeTierPricing(input: {
     q.users * t.userMrr * scale;
 
   const riskPremium = baseSubtotal * riskAdjustmentPct;
-  const { sell: addOnMrr, cost: addOnCost } = computeAddOnMrr(addOns, complianceProgram, rateCard);
+  const { sell: addOnMrr, cost: addOnCost } = computeAddOnMrr(addOns, complianceProgram, rateCard, m365Plans);
 
   const vcioOverageHours = computeVcioOverageHours(addOns, t.vcioIncludedHoursPerMonth);
   const vcioOverageSell = vcioOverageHours * t.additionalVcioRatePerHour;
@@ -519,6 +563,7 @@ export function computeAllTiers(input: {
   rateCard: RateCard;
   discountPct: number;
   waiveMinimumMrr?: boolean;
+  m365Plans?: M365Plan[];
 }): Record<TierKey, TierPricingResult> {
   const riskAdjustmentPct = effectiveRiskAdjustment(input.risk);
   const result = {} as Record<TierKey, TierPricingResult>;
@@ -532,6 +577,7 @@ export function computeAllTiers(input: {
       tier,
       discountPct: input.discountPct,
       waiveMinimumMrr: input.waiveMinimumMrr,
+      m365Plans: input.m365Plans,
     });
   }
   return result;

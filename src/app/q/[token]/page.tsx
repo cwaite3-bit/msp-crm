@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { groupByCategory } from "@/server/pricing";
 import { recordQuoteView } from "@/server/actions/quotes";
-import { getRateCardPublic, getScopeMatrixPublic } from "@/server/actions/settings";
+import { getRateCardPublic, getScopeMatrixPublic, getM365PlansPublic } from "@/server/actions/settings";
 import { AcceptRejectPanel } from "./accept-reject-panel";
 import { TierComparison } from "./tier-comparison";
 import { ScopeMatrixTable } from "./scope-matrix-table";
@@ -50,11 +50,12 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   // sheet), independent of the itemized line items below.
   const rateCard = await getRateCardPublic();
   const scopeMatrix = await getScopeMatrixPublic();
+  const m365Plans = await getM365PlansPublic();
   const quantities: Quantities = { ...EMPTY_QUANTITIES, ...(quote.quantities as Partial<Quantities>) };
   const risk: RiskFactors = { ...DEFAULT_RISK_FACTORS, ...(quote.riskFactors as Partial<RiskFactors>) };
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
   const discountPct = quote.discountType === "PERCENT" && quote.discountValue ? Number(quote.discountValue) / 100 : 0;
-  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct, waiveMinimumMrr: quote.waiveMinimumMrr });
+  const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct, waiveMinimumMrr: quote.waiveMinimumMrr, m365Plans });
   const recommendedTier = computeRecommendedTier({ risk, users: quantities.users, vcioEnabled: addOns.vcioEnabled });
 
   let selectedTierKey = null as ReturnType<typeof tierKeyFromName>;
@@ -65,6 +66,15 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
 
   const hasDiscoveryData = quantities.workstations > 0 || quantities.servers > 0 || quantities.users > 0;
 
+  const m365Summary = addOns.m365Selections
+    .filter((s) => s.seats > 0)
+    .map((s) => {
+      const plan = m365Plans.find((p) => p.id === s.planId);
+      return plan ? `${plan.name} (${s.seats})` : null;
+    })
+    .filter((v): v is string => Boolean(v))
+    .join(", ");
+
   const selectedServices: { label: string; value: string }[] = [
     { label: "vCIO / Strategic Planning", value: addOns.vcioEnabled ? `${addOns.vcioHoursPerMonth} hours per month` : "Not selected" },
     { label: "Backup / Disaster Recovery", value: addOns.backupProfile === "None" ? "Not selected" : addOns.backupProfile },
@@ -74,7 +84,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
         [
           addOns.emailSecurityEnabled ? "Advanced Email Security" : null,
           addOns.trainingEnabled ? "Security Awareness Training" : null,
-          addOns.m365Enabled ? "Microsoft 365 Licensing" : null,
+          m365Summary || null,
         ]
           .filter(Boolean)
           .join("; ") || "Not selected",

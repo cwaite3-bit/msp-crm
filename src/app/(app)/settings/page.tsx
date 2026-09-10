@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { getQuickBooksStatus } from "@/server/actions/quickbooks";
 import { listUsers } from "@/server/actions/users";
-import { getRateCard, getScopeMatrix } from "@/server/actions/settings";
+import { getRateCard, getScopeMatrix, getM365Plans } from "@/server/actions/settings";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { UsersPanel } from "./users-panel";
 import { DisconnectButton } from "./disconnect-button";
 import { RateCardPanel } from "./rate-card-panel";
 import { ScopeMatrixPanel } from "./scope-matrix-panel";
+import { M365PricingPanel } from "./m365-pricing-panel";
 
 export default async function SettingsPage({
   searchParams,
@@ -24,6 +25,7 @@ export default async function SettingsPage({
   const allUsers = isAdmin ? await listUsers() : [];
   const rateCard = await getRateCard();
   const scopeMatrix = await getScopeMatrix();
+  const m365Plans = await getM365Plans();
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,6 +108,21 @@ export default async function SettingsPage({
           </CardHeader>
           <CardContent>
             <ScopeMatrixPanel scopeMatrix={scopeMatrix} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Microsoft 365 plans</CardTitle>
+            <CardDescription>
+              Per-seat pricing for Microsoft 365 / Defender / Entra ID plans, used when quoting Microsoft 365
+              licensing on a customer&rsquo;s quote.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <M365PricingPanel plans={m365Plans} />
           </CardContent>
         </Card>
       )}

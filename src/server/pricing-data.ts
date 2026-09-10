@@ -241,6 +241,57 @@ export const TIER_FEATURES: Record<TierKey, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
+// Microsoft 365 licensing catalog — admin-editable list of M365/security/
+// identity plans (Settings → Microsoft 365 plans), seeded from Microsoft's
+// published per-user pricing. Replaces the old flat "one M365 seat rate for
+// everyone" placeholder (microsoft365LicensingPerSeat, above) with a real
+// per-plan price list so a quote can mix e.g. 8 Business Basic + 4 Business
+// Premium seats and price each seat at its actual plan's rate. Stored in
+// app_settings under key "m365Plans"; a quote's addOnSelections.m365Selections
+// (see pricing-rules.ts) references these by id.
+// ---------------------------------------------------------------------------
+
+export const M365_PLAN_CATEGORIES = ["core", "security", "identity", "addon"] as const;
+export type M365PlanCategory = (typeof M365_PLAN_CATEGORIES)[number];
+
+export const M365_CATEGORY_LABELS: Record<M365PlanCategory, string> = {
+  core: "Core productivity suite",
+  security: "Security",
+  identity: "Identity",
+  addon: "Add-on",
+};
+
+export type M365Plan = {
+  id: string;
+  name: string;
+  category: M365PlanCategory;
+  sell: number; // $/seat/month, customer-facing
+  cost: number; // $/seat/month, internal acquisition cost (for margin math)
+  sortOrder: number;
+  active: boolean; // inactive plans are hidden from new selections but keep pricing history intact
+};
+
+export function m365PlanById(plans: M365Plan[], id: string): M365Plan | undefined {
+  return plans.find((p) => p.id === id);
+}
+
+// Seeded from Microsoft's published Microsoft 365 business pricing as of
+// September 2026 (microsoft.com/en-us/microsoft-365/business pricing pages).
+// These are starting points, not contractual — edit freely from
+// Settings → Microsoft 365 plans; Microsoft's list prices change often and
+// what you actually pay through CSP/partner pricing may differ from retail.
+export const DEFAULT_M365_PLANS: M365Plan[] = [
+  { id: "business-basic", name: "Microsoft 365 Business Basic", category: "core", sell: 7.0, cost: 6.0, sortOrder: 0, active: true },
+  { id: "business-standard", name: "Microsoft 365 Business Standard", category: "core", sell: 23.5, cost: 20.0, sortOrder: 1, active: true },
+  { id: "business-premium", name: "Microsoft 365 Business Premium", category: "core", sell: 32.0, cost: 27.0, sortOrder: 2, active: true },
+  { id: "apps-for-business", name: "Microsoft 365 Apps for Business", category: "core", sell: 10.0, cost: 8.5, sortOrder: 3, active: true },
+  { id: "defender-for-business", name: "Microsoft Defender for Business", category: "security", sell: 3.0, cost: 2.5, sortOrder: 4, active: true },
+  { id: "entra-id-p1", name: "Microsoft Entra ID P1", category: "identity", sell: 7.0, cost: 6.0, sortOrder: 5, active: true },
+  { id: "entra-id-p2", name: "Microsoft Entra ID P2", category: "identity", sell: 10.0, cost: 8.5, sortOrder: 6, active: true },
+  { id: "copilot", name: "Microsoft 365 Copilot", category: "addon", sell: 18.0, cost: 15.0, sortOrder: 7, active: true },
+];
+
+// ---------------------------------------------------------------------------
 // Scope matrix: Service/Responsibility x tier, plus customer-facing copy.
 // Ported from the "Scope Matrix" sheet.
 // ---------------------------------------------------------------------------

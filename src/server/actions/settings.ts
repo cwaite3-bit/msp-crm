@@ -9,14 +9,17 @@ import {
   DEFAULT_RATE_CARD,
   DEFAULT_SCOPE_MATRIX,
   DEFAULT_CHECKLIST_TEMPLATE,
+  DEFAULT_M365_PLANS,
   type RateCard,
   type ScopeMatrixRow,
   type ChecklistTemplateItem,
+  type M365Plan,
 } from "@/server/pricing-data";
 
 const RATE_CARD_KEY = "pricingRateCard";
 const SCOPE_MATRIX_KEY = "scopeMatrix";
 const CHECKLIST_TEMPLATE_KEY = "checklistTemplate";
+const M365_PLANS_KEY = "m365Plans";
 
 async function requireUser() {
   const session = await auth();
@@ -91,6 +94,37 @@ export async function updateScopeMatrix(rows: ScopeMatrixRow[]) {
   await setSetting(SCOPE_MATRIX_KEY, rows);
   revalidatePath("/settings");
   revalidatePath("/quotes");
+}
+
+// ---- Microsoft 365 / security / identity plan catalog ----
+
+export async function getM365Plans(): Promise<M365Plan[]> {
+  await requireUser();
+  return getSetting(M365_PLANS_KEY, DEFAULT_M365_PLANS);
+}
+
+// No-auth read for the public client-facing quote page — see
+// getRateCardPublic above for why this exists as a separate function. Note
+// this returns `cost` too (needed for the tier-comparison math server-side);
+// the public page must only ever render sell-side aggregates, never these
+// rows directly.
+export async function getM365PlansPublic(): Promise<M365Plan[]> {
+  return getSetting(M365_PLANS_KEY, DEFAULT_M365_PLANS);
+}
+
+export async function updateM365Plans(plans: M365Plan[]) {
+  await requireAdmin();
+  await setSetting(M365_PLANS_KEY, plans);
+  revalidatePath("/settings");
+  revalidatePath("/quotes");
+}
+
+export async function resetM365PlansToDefault() {
+  await requireAdmin();
+  await setSetting(M365_PLANS_KEY, DEFAULT_M365_PLANS);
+  revalidatePath("/settings");
+  revalidatePath("/quotes");
+  return DEFAULT_M365_PLANS;
 }
 
 // ---- Checklist template ----

@@ -9,12 +9,15 @@
 // Run with: npx tsx src/server/pricing-rules.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_RATE_CARD } from "./pricing-data";
+import { DEFAULT_RATE_CARD, DEFAULT_M365_PLANS } from "./pricing-data";
 import {
   computeAllTiers,
   computeRecommendedTier,
   computePlanFitStatus,
   effectiveRiskAdjustment,
+  computeM365Mrr,
+  computeAddOnMrr,
+  computeAddOnLineItems,
   type Quantities,
   type RiskFactors,
   EMPTY_ADD_ONS,
@@ -116,6 +119,83 @@ test("minimum MRR floor applies for a tiny environment", () => {
   const all = computeAllTiers({ quantities: tiny, risk: flatRisk, addOns: EMPTY_ADD_ONS, rateCard: DEFAULT_RATE_CARD, discountPct: 0 });
   assert.equal(all.bronze.grossMrrBeforeDiscount, 200); // floored at the Bronze minimum
   assert.ok(all.bronze.minimumMrrAdjustment > 0);
+});
+
+// ---------------------------------------------------------------------------
+// Microsoft 365 per-plan licensing (Settings → Microsoft 365 plans)
+// ---------------------------------------------------------------------------
+
+test("computeM365Mrr sums seats x plan price across multiple plans", () => {
+  const result = computeM365Mrr(
+    [
+      { planId: "business-basic", seats: 8 },
+      { planId: "business-premium", seats: 4 },
+    ],
+    DEFAULT_M365_PLANS
+  );
+  // 8 x $7.00 Basic + 4 x $32.00 Premium
+  assert.equal(result.sell, 8 * 7.0 + 4 * 32.0);
+  assert.equal(result.cost, 8 * 6.0 + 4 * 27.0);
+  assert.equal(result.totalSeats, 12);
+});
+
+test("computeM365Mrr skips a selection whose plan id no longer exists", () => {
+  const result = computeM365Mrr(
+    [
+      { planId: "business-basic", seats: 5 },
+      { planId: "deleted-plan", seats: 100 },
+    ],
+    DEFAULT_M365_PLANS
+  );
+  assert.equal(result.sell, 5 * 7.0);
+  assert.equal(result.totalSeats, 5);
+});
+
+test("computeM365Mrr with no selections or no plans contributes $0", () => {
+  assert.deepEqual(computeM365Mrr([], DEFAULT_M365_PLANS), { sell: 0, cost: 0, totalSeats: 0 });
+  assert.deepEqual(computeM365Mrr([{ planId: "business-basic", seats: 5 }], []), { sell: 0, cost: 0, totalSeats: 0 });
+});
+
+test("computeAddOnMrr folds multi-plan M365 selections into the add-on total", () => {
+  const addOns = {
+    ...EMPTY_ADD_ONS,
+    m365Selections: [
+      { planId: "business-standard", seats: 10 },
+      { planId: "defender-for-business", seats: 10 },
+    ],
+  };
+  const { sell, cost } = computeAddOnMrr(addOns, "None", DEFAULT_RATE_CARD, DEFAULT_M365_PLANS);
+  assert.equal(sell, 10 * 23.5 + 10 * 3.0);
+  assert.equal(cost, 10 * 20.0 + 10 * 2.5);
+});
+
+test("computeAddOnMrr with m365Plans omitted (default []) prices M365 at $0 rather than throwing", () => {
+  const addOns = { ...EMPTY_ADD_ONS, m365Selections: [{ planId: "business-standard", seats: 10 }] };
+  const { sell } = computeAddOnMrr(addOns, "None", DEFAULT_RATE_CARD);
+  assert.equal(sell, 0);
+});
+
+test("computeAddOnLineItems emits one line per selected M365 plan", () => {
+  const addOns = {
+    ...EMPTY_ADD_ONS,
+    m365Selections: [
+      { planId: "business-basic", seats: 8 },
+      { planId: "business-premium", seats: 4 },
+      { planId: "entra-id-p1", seats: 0 }, // zero-seat rows are skipped
+    ],
+  };
+  const items = computeAddOnLineItems(addOns, "None", DEFAULT_RATE_CARD, DEFAULT_M365_PLANS);
+  const labels = items.map((i) => i.label);
+  assert.ok(labels.includes("Microsoft 365 Business Basic (8 seats)"));
+  assert.ok(labels.includes("Microsoft 365 Business Premium (4 seats)"));
+  assert.equal(items.length, 2);
+});
+
+test("computeAllTiers with M365 selections increases finalMrr by the M365 sell total", () => {
+  const withoutM365 = computeAllTiers({ quantities, risk, addOns: EMPTY_ADD_ONS, rateCard: DEFAULT_RATE_CARD, discountPct: 0, m365Plans: DEFAULT_M365_PLANS });
+  const addOns = { ...EMPTY_ADD_ONS, m365Selections: [{ planId: "business-standard", seats: 20 }] };
+  const withM365 = computeAllTiers({ quantities, risk, addOns, rateCard: DEFAULT_RATE_CARD, discountPct: 0, m365Plans: DEFAULT_M365_PLANS });
+  assert.ok(Math.abs(withM365.silver.finalMrr - withoutM365.silver.finalMrr - 20 * 23.5) < 1e-9);
 });
 
 test("waiveMinimumMrr skips the floor entirely", () => {

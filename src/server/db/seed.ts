@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import { db } from "./index";
 import { users, productCategories, serviceTiers, products, productTierPrices, appSettings } from "./schema";
 import { eq } from "drizzle-orm";
-import { DEFAULT_RATE_CARD, DEFAULT_SCOPE_MATRIX, DEFAULT_CHECKLIST_TEMPLATE } from "../pricing-data";
+import { DEFAULT_RATE_CARD, DEFAULT_SCOPE_MATRIX, DEFAULT_CHECKLIST_TEMPLATE, DEFAULT_M365_PLANS } from "../pricing-data";
 
 async function upsertUser(name: string, email: string, password: string, role: "ADMIN" | "STAFF") {
   const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -95,6 +95,9 @@ async function main() {
   await upsertAppSetting("pricingRateCard", DEFAULT_RATE_CARD);
   await upsertAppSetting("scopeMatrix", DEFAULT_SCOPE_MATRIX);
   await upsertAppSetting("checklistTemplate", DEFAULT_CHECKLIST_TEMPLATE);
+
+  console.log("Seeding Microsoft 365 plan pricing…");
+  await upsertAppSetting("m365Plans", DEFAULT_M365_PLANS);
 
   console.log("Seeding service tiers…");
   // Bronze/Silver/Gold, matching the Lockdown IT quote-builder spreadsheet's

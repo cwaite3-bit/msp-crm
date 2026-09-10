@@ -32,7 +32,7 @@ const INCIDENT: IncidentHistory[] = ["Normal", "Elevated", "Severe"];
 const OVERRIDE_OPTIONS = [0, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2];
 
 const QUANTITY_FIELDS: { key: keyof Quantities; label: string }[] = [
-  { key: "users", label: "Users" },
+  { key: "users", label: "Total Users" },
   { key: "workstations", label: "Managed Workstations" },
   { key: "servers", label: "Servers" },
   { key: "locations", label: "Locations" },
