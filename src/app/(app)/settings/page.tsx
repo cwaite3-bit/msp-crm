@@ -14,6 +14,7 @@ import { ScopeMatrixPanel } from "./scope-matrix-panel";
 import { M365PricingPanel } from "./m365-pricing-panel";
 import { SlaPanel } from "./sla-panel";
 import { MsaSettingsPanel } from "./msa-settings-panel";
+import { TestEmailButton } from "./test-email-button";
 
 export default async function SettingsPage({
   searchParams,
@@ -75,6 +76,22 @@ export default async function SettingsPage({
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Email</CardTitle>
+          <CardDescription>
+            Powers the quote-sent, quote-accepted/declined, MSA-signed, and QuickBooks-invoice notification emails —
+            all via Resend.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between">
+          <p className="text-sm text-slate-500">
+            Sends a test email to {session?.user.email || "your account's email address"}.
+          </p>
+          <TestEmailButton />
         </CardContent>
       </Card>
 
