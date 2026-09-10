@@ -30,7 +30,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", baseUrl));
   }
 
-  const { clientId, clientSecret, redirectUri, environment } = getQboEnv();
+  // Same guard as the connect route - don't let a missing/changed env var
+  // surface as a raw 500 here either.
+  let clientId: string, clientSecret: string, redirectUri: string, environment: string;
+  try {
+    ({ clientId, clientSecret, redirectUri, environment } = getQboEnv());
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "QuickBooks is not configured.";
+    return NextResponse.redirect(new URL(`/settings?qbo_error=${encodeURIComponent(message)}`, baseUrl));
+  }
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
   const tokenRes = await fetch(QBO_TOKEN_URL, {
