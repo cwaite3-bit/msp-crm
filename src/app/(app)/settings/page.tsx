@@ -1,7 +1,8 @@
 import { auth } from "@/auth";
 import { getQuickBooksStatus } from "@/server/actions/quickbooks";
 import { listUsers } from "@/server/actions/users";
-import { getRateCard, getScopeMatrix, getM365Plans } from "@/server/actions/settings";
+import { getRateCard, getScopeMatrix, getM365Plans, getMsaSettings } from "@/server/actions/settings";
+import { listSlas } from "@/server/actions/slas";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,8 @@ import { DisconnectButton } from "./disconnect-button";
 import { RateCardPanel } from "./rate-card-panel";
 import { ScopeMatrixPanel } from "./scope-matrix-panel";
 import { M365PricingPanel } from "./m365-pricing-panel";
+import { SlaPanel } from "./sla-panel";
+import { MsaSettingsPanel } from "./msa-settings-panel";
 
 export default async function SettingsPage({
   searchParams,
@@ -26,6 +29,8 @@ export default async function SettingsPage({
   const rateCard = await getRateCard();
   const scopeMatrix = await getScopeMatrix();
   const m365Plans = await getM365Plans();
+  const slaList = isAdmin ? await listSlas() : [];
+  const msaSettings = isAdmin ? await getMsaSettings() : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -123,6 +128,36 @@ export default async function SettingsPage({
           </CardHeader>
           <CardContent>
             <M365PricingPanel plans={m365Plans} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Service level agreements (SLAs)</CardTitle>
+            <CardDescription>
+              Response &amp; resolution targets by severity, coverage hours, and uptime guarantees — attach one to a
+              quote separately from its Bronze/Silver/Gold plan.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SlaPanel slas={slaList} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && msaSettings && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Master Service Agreement terms</CardTitle>
+            <CardDescription>
+              Standing legal/commercial terms merged into every generated MSA — term length, payment, liability cap,
+              and more.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MsaSettingsPanel settings={msaSettings} />
           </CardContent>
         </Card>
       )}

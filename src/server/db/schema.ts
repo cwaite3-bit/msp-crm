@@ -231,6 +231,10 @@ export const quotes = pgTable(
     title: text("title").notNull().default("MSP Services Quote"),
     status: quoteStatusEnum("status").notNull().default("DRAFT"),
     serviceTierId: text("service_tier_id").references(() => serviceTiers.id),
+    // Service level agreement attached to this quote — independent of the
+    // Bronze/Silver/Gold service tier above. Nullable: older quotes and any
+    // quote where staff haven't picked one yet have no SLA attached.
+    slaId: text("sla_id").references(() => slas.id, { onDelete: "set null" }),
 
     // Quantity inputs that drive the pricing-engine entry screen: users,
     // workstations, servers, locations, firewalls, switches, aps,
@@ -343,6 +347,45 @@ export const quoteLineItems = pgTable(
   (t) => [index("quote_line_items_quote_idx").on(t.quoteId)]
 );
 
+// ---------------------------------------------------------------------------
+// Service Level Agreements (Settings → SLAs). Independent of the
+// Bronze/Silver/Gold service tier — a tier is "what's included"; an SLA is
+// "how fast we respond and fix it." Staff create/edit SLAs here and attach
+// one to a quote (quotes.slaId above); the attached SLA's response/
+// resolution targets and coverage hours are shown to the client on the
+// proposal and folded into the MSA when one is generated.
+// ---------------------------------------------------------------------------
+
+export const slas = pgTable("slas", {
+  id: cuid(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+
+  // "Business Hours" | "Business Hours + Emergency" | "24x7" — free text so
+  // an admin can rename/extend without a migration; mirrors the wording
+  // already used for Discovery's afterHours risk factor.
+  coverageHours: text("coverage_hours").notNull().default("Business Hours"),
+
+  criticalResponseMinutes: integer("critical_response_minutes").notNull().default(30),
+  highResponseMinutes: integer("high_response_minutes").notNull().default(60),
+  mediumResponseMinutes: integer("medium_response_minutes").notNull().default(240),
+  lowResponseMinutes: integer("low_response_minutes").notNull().default(480),
+
+  criticalResolutionHours: integer("critical_resolution_hours").notNull().default(4),
+  highResolutionHours: integer("high_resolution_hours").notNull().default(8),
+  mediumResolutionHours: integer("medium_resolution_hours").notNull().default(24),
+  lowResolutionHours: integer("low_resolution_hours").notNull().default(40),
+
+  uptimeGuaranteePct: numeric("uptime_guarantee_pct", { precision: 5, scale: 2 }).notNull().default("99.90"),
+  escalationProcess: text("escalation_process"),
+  exclusions: text("exclusions"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const quoteEventTypeEnum = pgEnum("quote_event_type", [
   "CREATED",
   "SENT",
@@ -365,6 +408,55 @@ export const quoteEvents = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("quote_events_quote_idx").on(t.quoteId)]
+);
+
+// ---------------------------------------------------------------------------
+// Master Service Agreement documents — generated per-quote once a quote is
+// ACCEPTED, summarizing exactly what was agreed to (tier, SLA, line items)
+// plus the standing MSA legal terms (Settings → MSA terms). Signable via a
+// lightweight typed-name flow at /msa/[signingToken] (same non-legal-
+// e-signature pattern as the quote accept flow at /q/[token]), or
+// downloadable as a plain PDF to upload to a real e-signature product
+// (Adobe Acrobat Sign, DocuSign, etc.) instead.
+// ---------------------------------------------------------------------------
+
+export const msaDocumentStatusEnum = pgEnum("msa_document_status", ["DRAFT", "SENT", "SIGNED"]);
+
+export const msaDocuments = pgTable(
+  "msa_documents",
+  {
+    id: cuid(),
+    quoteId: text("quote_id")
+      .notNull()
+      .references(() => quotes.id, { onDelete: "cascade" }),
+    status: msaDocumentStatusEnum("status").notNull().default("DRAFT"),
+
+    // Structured snapshot of everything the MSA summarizes, captured at
+    // generation time (customer/contact, tier, SLA, line items, and the
+    // standing MSA legal terms) — see src/server/msa.ts `MsaContent`. Freely
+    // regenerated while DRAFT/SENT (re-running "Generate MSA" overwrites
+    // this with the quote's current state); frozen once SIGNED so a later
+    // catalog/SLA/terms edit can never silently rewrite an already-signed
+    // agreement.
+    content: jsonb("content").notNull(),
+
+    signingToken: text("signing_token")
+      .notNull()
+      .unique()
+      .$defaultFn(() => crypto.randomUUID()),
+
+    sentAt: timestamp("sent_at"),
+    sentToEmail: text("sent_to_email"),
+
+    signedAt: timestamp("signed_at"),
+    signedByName: text("signed_by_name"),
+    signedByTitle: text("signed_by_title"),
+    signedIp: text("signed_ip"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("msa_documents_quote_idx").on(t.quoteId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -436,8 +528,10 @@ export const quotesRelations = relations(quotes, ({ one, many }) => ({
   contact: one(contacts, { fields: [quotes.contactId], references: [contacts.id] }),
   createdBy: one(users, { fields: [quotes.createdById], references: [users.id] }),
   serviceTier: one(serviceTiers, { fields: [quotes.serviceTierId], references: [serviceTiers.id] }),
+  sla: one(slas, { fields: [quotes.slaId], references: [slas.id] }),
   lineItems: many(quoteLineItems),
   events: many(quoteEvents),
+  msaDocuments: many(msaDocuments),
 }));
 
 export const quoteLineItemsRelations = relations(quoteLineItems, ({ one }) => ({
@@ -447,4 +541,12 @@ export const quoteLineItemsRelations = relations(quoteLineItems, ({ one }) => ({
 
 export const quoteEventsRelations = relations(quoteEvents, ({ one }) => ({
   quote: one(quotes, { fields: [quoteEvents.quoteId], references: [quotes.id] }),
+}));
+
+export const slasRelations = relations(slas, ({ many }) => ({
+  quotes: many(quotes),
+}));
+
+export const msaDocumentsRelations = relations(msaDocuments, ({ one }) => ({
+  quote: one(quotes, { fields: [msaDocuments.quoteId], references: [quotes.id] }),
 }));

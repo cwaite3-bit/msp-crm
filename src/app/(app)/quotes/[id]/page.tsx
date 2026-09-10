@@ -4,6 +4,8 @@ import { eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { listCatalog } from "@/server/actions/catalog";
 import { getRateCard, getChecklistTemplate, getM365Plans } from "@/server/actions/settings";
+import { listSlas } from "@/server/actions/slas";
+import { getMsaForQuote } from "@/server/actions/msa";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -16,6 +18,7 @@ import { DiscoveryForm } from "./discovery-form";
 import { AddOnsForm } from "./addons-form";
 import { PlanComparisonPanel } from "./plan-comparison-panel";
 import { ChecklistPanel } from "./checklist-panel";
+import { MsaPanel } from "./msa-panel";
 import {
   computeAllTiers,
   computeRecommendedTier,
@@ -46,6 +49,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const rateCard = await getRateCard();
   const checklistTemplate = await getChecklistTemplate();
   const m365Plans = await getM365Plans();
+  const slaList = await listSlas();
+  const msaDocument = await getMsaForQuote(id);
   const quantities: Quantities = { ...EMPTY_QUANTITIES, ...(quote.quantities as Partial<Quantities>) };
   const risk: RiskFactors = { ...DEFAULT_RISK_FACTORS, ...(quote.riskFactors as Partial<RiskFactors>) };
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
@@ -149,7 +154,16 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
               <CardTitle>Quote settings</CardTitle>
             </CardHeader>
             <CardContent>
-              <QuoteMetaForm quote={quote} tiers={catalog.tiers} contacts={customerContacts} />
+              <QuoteMetaForm quote={quote} tiers={catalog.tiers} contacts={customerContacts} slaList={slaList} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Master Service Agreement</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MsaPanel quote={quote} contact={customerContacts.find((c) => c.id === quote.contactId) ?? null} document={msaDocument} />
             </CardContent>
           </Card>
         </div>

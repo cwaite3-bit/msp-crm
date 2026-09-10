@@ -6,9 +6,16 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { db } from "./index";
-import { users, productCategories, serviceTiers, products, productTierPrices, appSettings } from "./schema";
+import { users, productCategories, serviceTiers, products, productTierPrices, appSettings, slas } from "./schema";
 import { eq } from "drizzle-orm";
-import { DEFAULT_RATE_CARD, DEFAULT_SCOPE_MATRIX, DEFAULT_CHECKLIST_TEMPLATE, DEFAULT_M365_PLANS } from "../pricing-data";
+import {
+  DEFAULT_RATE_CARD,
+  DEFAULT_SCOPE_MATRIX,
+  DEFAULT_CHECKLIST_TEMPLATE,
+  DEFAULT_M365_PLANS,
+  DEFAULT_SLAS,
+  DEFAULT_MSA_SETTINGS,
+} from "../pricing-data";
 
 async function upsertUser(name: string, email: string, password: string, role: "ADMIN" | "STAFF") {
   const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -84,6 +91,33 @@ async function upsertAppSetting(key: string, value: unknown) {
   return row;
 }
 
+async function upsertSla(input: (typeof DEFAULT_SLAS)[number]) {
+  const existing = await db.select().from(slas).where(eq(slas.name, input.name)).limit(1);
+  if (existing[0]) return existing[0];
+  const [row] = await db
+    .insert(slas)
+    .values({
+      name: input.name,
+      description: input.description,
+      isDefault: input.isDefault,
+      sortOrder: input.sortOrder,
+      coverageHours: input.coverageHours,
+      criticalResponseMinutes: input.criticalResponseMinutes,
+      highResponseMinutes: input.highResponseMinutes,
+      mediumResponseMinutes: input.mediumResponseMinutes,
+      lowResponseMinutes: input.lowResponseMinutes,
+      criticalResolutionHours: input.criticalResolutionHours,
+      highResolutionHours: input.highResolutionHours,
+      mediumResolutionHours: input.mediumResolutionHours,
+      lowResolutionHours: input.lowResolutionHours,
+      uptimeGuaranteePct: String(input.uptimeGuaranteePct),
+      escalationProcess: input.escalationProcess,
+      exclusions: input.exclusions,
+    })
+    .returning();
+  return row;
+}
+
 async function main() {
   console.log("Seeding admin user…");
   const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@example.com";
@@ -98,6 +132,14 @@ async function main() {
 
   console.log("Seeding Microsoft 365 plan pricing…");
   await upsertAppSetting("m365Plans", DEFAULT_M365_PLANS);
+
+  console.log("Seeding service level agreements…");
+  for (const sla of DEFAULT_SLAS) {
+    await upsertSla(sla);
+  }
+
+  console.log("Seeding MSA standing terms (fill in your legal name/address/state in Settings)…");
+  await upsertAppSetting("msaSettings", DEFAULT_MSA_SETTINGS);
 
   console.log("Seeding service tiers…");
   // Bronze/Silver/Gold, matching the Lockdown IT quote-builder spreadsheet's

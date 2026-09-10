@@ -23,6 +23,7 @@ import {
   type IncidentHistory,
 } from "@/server/pricing-rules";
 import { TIER_LABELS, COMPLIANCE_FRAMEWORKS } from "@/server/pricing-data";
+import { HelpTip } from "@/components/help-tip";
 
 const DOC_QUALITY: DocumentationQuality[] = ["Excellent", "Good", "Average", "Poor"];
 const LEGACY: LegacySystems[] = ["None", "Some", "Significant"];
@@ -96,8 +97,9 @@ export function DiscoveryForm({
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+        <p className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
           Complexity, risk &amp; support expectations
+          <HelpTip text="These answers drive the automatic risk premium and recommended plan below — poor documentation, legacy systems, and after-hours/compliance needs all raise the effective risk %, which raises the recommended tier and price." />
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
@@ -159,7 +161,10 @@ export function DiscoveryForm({
             onChange={(e) => setRisk((r) => ({ ...r, manualOverrideEnabled: e.target.checked }))}
             className="h-4 w-4"
           />
-          <Label htmlFor="manual-override" className="cursor-pointer">Use manual risk override (normally leave off)</Label>
+          <Label htmlFor="manual-override" className="flex cursor-pointer items-center gap-1">
+            Use manual risk override (normally leave off)
+            <HelpTip text="Overrides the calculated risk % with a flat percentage you choose — use only when you have a specific reason the automatic calculation doesn't fit this customer." />
+          </Label>
           {risk.manualOverrideEnabled && (
             <Select
               value={String(risk.manualOverridePct)}

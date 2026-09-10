@@ -21,7 +21,9 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2 } from "lucide-react";
+import { HelpTip } from "@/components/help-tip";
 import { formatCurrency } from "@/lib/utils";
 import { computeQuoteTotals, groupByCategory } from "@/server/pricing";
 import {
@@ -102,6 +104,16 @@ export function QuoteBuilder({
     });
   }
 
+  function onDescriptionChange(item: LineItem, description: string) {
+    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, description } : i)));
+  }
+
+  function onDescriptionBlur(item: LineItem) {
+    startTransition(async () => {
+      await updateLineItem(quote.id, item.id, { description: item.description ?? "" });
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {grouped.length === 0 && (
@@ -126,7 +138,23 @@ export function QuoteBuilder({
                         </span>
                       )}
                     </div>
-                    {item.description && <div className="text-xs text-slate-500">{item.description}</div>}
+                    {readOnly ? (
+                      item.description && <div className="whitespace-pre-wrap text-xs text-slate-500">{item.description}</div>
+                    ) : (
+                      <div className="mt-1 flex items-start gap-1">
+                        <Textarea
+                          value={item.description ?? ""}
+                          onChange={(e) => onDescriptionChange(item, e.target.value)}
+                          onBlur={() => onDescriptionBlur(item)}
+                          placeholder="Client-facing description shown on the proposal — what this covers, in plain language."
+                          rows={2}
+                          className="min-h-0 text-xs text-slate-600"
+                        />
+                        {item.source === "ENGINE" && (
+                          <HelpTip text="This line is auto-generated from Discovery/add-ons. Its description is overwritten if the tier or those inputs change — edit it after you're done adjusting Discovery." />
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="w-28">
                     <Input
@@ -228,6 +256,7 @@ function AddItemForm({
 
   // ---- new / custom item ----
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [unitLabel, setUnitLabel] = useState("flat");
@@ -264,6 +293,7 @@ function AddItemForm({
       if (saveToCatalog) {
         await quickCreateProduct({
           name,
+          description: description || undefined,
           categoryId: categoryId || undefined,
           newCategoryName: !categoryId ? newCategoryName : undefined,
           unitLabel,
@@ -275,6 +305,7 @@ function AddItemForm({
       await addCustomLineItem(quoteId, {
         categoryName,
         name,
+        description: description || undefined,
         unitLabel,
         billingType,
         quantity: customQty,
@@ -327,6 +358,12 @@ function AddItemForm({
           Create a brand-new product or service right now and add it to this quote.
         </p>
         <Input placeholder="Name (e.g. 'SIEM monitoring')" value={name} onChange={(e) => setName(e.target.value)} />
+        <Textarea
+          placeholder="Client-facing description — what this covers, in plain language. Shown on the proposal."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+        />
 
         <div className="grid grid-cols-2 gap-2">
           <Select value={categoryId} onValueChange={(v) => { setCategoryId(v); setNewCategoryName(""); }}>

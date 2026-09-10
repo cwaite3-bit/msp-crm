@@ -12,6 +12,7 @@ import { EMPTY_ADD_ONS, type AddOnSelections, type BackupProfile, type M365Selec
 import { formatCurrency } from "@/lib/utils";
 import type { M365Plan } from "@/server/pricing-data";
 import { Trash2 } from "lucide-react";
+import { HelpTip } from "@/components/help-tip";
 
 const BACKUP_PROFILES: BackupProfile[] = ["None", "Endpoint Backup", "Server Backup", "Managed Backup", "Managed BCDR"];
 
@@ -92,7 +93,10 @@ export function AddOnsForm({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-[1fr_auto_auto] items-end gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label className="text-xs">vCIO / strategic planning</Label>
+          <Label className="flex items-center gap-1 text-xs">
+            vCIO / strategic planning
+            <HelpTip text="Included hours of executive-level IT planning/guidance per month. Hours used beyond this allowance bill at the additional vCIO rate on the rate card." />
+          </Label>
           <YesNoSelect value={addOns.vcioEnabled} onChange={(v) => setAddOns((a) => ({ ...a, vcioEnabled: v }))} />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -105,7 +109,10 @@ export function AddOnsForm({
 
       <div className="grid grid-cols-[1fr_auto_auto] items-end gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label className="text-xs">Backup / disaster recovery profile</Label>
+          <Label className="flex items-center gap-1 text-xs">
+            Backup / disaster recovery profile
+            <HelpTip text="Endpoint/Server Backup covers file-level backup of that asset type. Managed Backup/BCDR add faster recovery objectives and a base platform fee — see the rate card for what each includes." />
+          </Label>
           <Select value={addOns.backupProfile} onValueChange={(v) => setAddOns((a) => ({ ...a, backupProfile: v as BackupProfile }))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>{BACKUP_PROFILES.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
@@ -149,7 +156,10 @@ export function AddOnsForm({
 
       <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3">
         <div className="flex items-center justify-between">
-          <Label className="text-xs">Microsoft 365 licensing (per plan)</Label>
+          <Label className="flex items-center gap-1 text-xs">
+            Microsoft 365 licensing (per plan)
+            <HelpTip text="Ask how many total users vs. how many need an M365 mailbox/license, then pick a specific plan per group — you can mix e.g. 8 Business Basic + 4 Business Premium seats. Manage plan pricing at Settings → Microsoft 365 plans." />
+          </Label>
           {totalUsers > 0 && (
             <span className="text-xs text-slate-400">
               {m365TotalSeats} of {totalUsers} total user{totalUsers === 1 ? "" : "s"} licensed

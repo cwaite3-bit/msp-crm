@@ -144,6 +144,7 @@ export async function clearTierPrice(productId: string, tierId: string) {
 // Quick-create used from inside the quote builder ("add on the fly").
 export async function quickCreateProduct(input: {
   name: string;
+  description?: string;
   categoryId?: string;
   newCategoryName?: string;
   unitLabel: string;
@@ -162,6 +163,7 @@ export async function quickCreateProduct(input: {
     .insert(products)
     .values({
       name: input.name.trim(),
+      description: input.description || null,
       categoryId,
       unitLabel: input.unitLabel || "flat",
       billingType: input.billingType,

@@ -7,9 +7,11 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { groupByCategory } from "@/server/pricing";
 import { recordQuoteView } from "@/server/actions/quotes";
 import { getRateCardPublic, getScopeMatrixPublic, getM365PlansPublic } from "@/server/actions/settings";
+import { getSlaPublic } from "@/server/actions/slas";
 import { AcceptRejectPanel } from "./accept-reject-panel";
 import { TierComparison } from "./tier-comparison";
 import { ScopeMatrixTable } from "./scope-matrix-table";
+import { SlaDetail } from "./sla-detail";
 import {
   computeAllTiers,
   computeRecommendedTier,
@@ -63,6 +65,8 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
     const [tierRow] = await db.select().from(serviceTiers).where(eq(serviceTiers.id, quote.serviceTierId)).limit(1);
     selectedTierKey = tierKeyFromName(tierRow?.name);
   }
+
+  const sla = quote.slaId ? await getSlaPublic(quote.slaId) : null;
 
   const hasDiscoveryData = quantities.workstations > 0 || quantities.servers > 0 || quantities.users > 0;
 
@@ -158,7 +162,11 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
                       <span className="ml-1.5 text-slate-400">
                         ({item.quantity} × {formatCurrency(item.unitPrice)})
                       </span>
-                      {item.description && <p className="text-xs text-slate-500">{item.description}</p>}
+                      {item.description && (
+                        <p className="mt-0.5 max-w-md whitespace-pre-wrap text-xs leading-relaxed text-slate-500">
+                          {item.description}
+                        </p>
+                      )}
                     </div>
                     <span className="font-medium text-slate-900">{formatCurrency(item.lineTotal)}</span>
                   </div>
@@ -223,6 +231,12 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
                 scope, SLA, exclusions, licensing, onboarding requirements, and commercial terms are governed
                 by the Managed Services Agreement and Statement of Work.
               </p>
+            </div>
+          )}
+
+          {sla && (
+            <div className="mt-8">
+              <SlaDetail sla={sla} />
             </div>
           )}
 

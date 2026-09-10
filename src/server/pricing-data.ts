@@ -386,6 +386,234 @@ export const SCOPE_TERM_VARIANT: Record<string, "included" | "addon" | "excluded
 };
 
 // ---------------------------------------------------------------------------
+// Service Level Agreements (Settings → SLAs) — response/resolution targets
+// by severity, coverage hours, uptime guarantee, escalation path, and
+// exclusions. Independent of Bronze/Silver/Gold: a tier says what's
+// included, an SLA says how fast it's responded to and fixed. Staff attach
+// one SLA to a quote (separate from the service tier); the client sees the
+// attached SLA's targets on the proposal, and it's folded into the MSA.
+//
+// Seed values below reflect typical MSP industry practice (severity-based
+// response/resolution tiers, business-hours vs. 24x7 coverage, uptime
+// guarantees in the 99.5–99.95% range) — they are starting points, not
+// commitments you've made to anyone; review and adjust every field from
+// Settings → SLAs before relying on them in a real agreement.
+// ---------------------------------------------------------------------------
+
+export const SEVERITY_LEVELS = ["critical", "high", "medium", "low"] as const;
+export type SeverityLevel = (typeof SEVERITY_LEVELS)[number];
+
+export const SEVERITY_LABELS: Record<SeverityLevel, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+export const SEVERITY_DESCRIPTIONS: Record<SeverityLevel, string> = {
+  critical: "Business-down: service outage or security incident affecting all/most users with no workaround.",
+  high: "Major function impaired for multiple users, or one user fully unable to work; workaround limited.",
+  medium: "Single user or non-critical system impaired; a workaround exists.",
+  low: "Minor issue, cosmetic defect, or general how-to request with no material business impact.",
+};
+
+export type SlaDefaults = {
+  name: string;
+  description: string;
+  isDefault: boolean;
+  sortOrder: number;
+  coverageHours: string;
+  criticalResponseMinutes: number;
+  highResponseMinutes: number;
+  mediumResponseMinutes: number;
+  lowResponseMinutes: number;
+  criticalResolutionHours: number;
+  highResolutionHours: number;
+  mediumResolutionHours: number;
+  lowResolutionHours: number;
+  uptimeGuaranteePct: number;
+  escalationProcess: string;
+  exclusions: string;
+};
+
+const STANDARD_EXCLUSIONS =
+  "Response and resolution targets apply only to covered systems, software, and users under active management. " +
+  "They do not apply to: issues caused by third-party vendor outages or acts/omissions of the client or its users; " +
+  "hardware or software outside the managed environment; force majeure events; or periods where the client has not " +
+  "provided reasonably requested access or information. Time spent waiting on a required client response or a " +
+  "third-party vendor does not count against the resolution target.";
+
+// Seeded into the `slas` table on first run (see seed.ts) — from then on the
+// live rows in the database are the source of truth, same pattern as
+// DEFAULT_RATE_CARD / DEFAULT_M365_PLANS above.
+export const DEFAULT_SLAS: SlaDefaults[] = [
+  {
+    name: "Standard (Business Hours)",
+    description: "Our baseline SLA for business-hours support with next-business-day handling for lower-severity items.",
+    isDefault: true,
+    sortOrder: 0,
+    coverageHours: "Business Hours (Mon–Fri, 8:00 AM–5:00 PM local time), excluding observed holidays",
+    criticalResponseMinutes: 30,
+    highResponseMinutes: 60,
+    mediumResponseMinutes: 240,
+    lowResponseMinutes: 480,
+    criticalResolutionHours: 4,
+    highResolutionHours: 8,
+    mediumResolutionHours: 24,
+    lowResolutionHours: 40,
+    uptimeGuaranteePct: 99.5,
+    escalationProcess:
+      "Tier 1 support engineer triages on receipt. If a Critical or High severity issue is not resolved within its resolution target, it is automatically escalated to a senior/Tier 2 engineer. Any Critical issue still open at 2x its resolution target is escalated to a service delivery manager, who will contact the client directly with a status update and revised estimate.",
+    exclusions: STANDARD_EXCLUSIONS,
+  },
+  {
+    name: "Priority (Business Hours + Emergency)",
+    description: "Faster targets across the board, plus 24x7 coverage for business-down Critical issues only.",
+    isDefault: false,
+    sortOrder: 1,
+    coverageHours: "Business Hours for all severities, plus 24x7x365 emergency coverage for Critical issues",
+    criticalResponseMinutes: 15,
+    highResponseMinutes: 30,
+    mediumResponseMinutes: 120,
+    lowResponseMinutes: 240,
+    criticalResolutionHours: 4,
+    highResolutionHours: 6,
+    mediumResolutionHours: 16,
+    lowResolutionHours: 24,
+    uptimeGuaranteePct: 99.9,
+    escalationProcess:
+      "Tier 1 support engineer triages on receipt, 24x7 for Critical issues. Critical and High severity issues not resolved within their resolution target automatically escalate to a senior/Tier 2 engineer. Any Critical issue still open at 1.5x its resolution target escalates to a service delivery manager for direct client contact and a revised estimate.",
+    exclusions: STANDARD_EXCLUSIONS,
+  },
+  {
+    name: "Premier (24x7)",
+    description: "Our fastest targets with full round-the-clock coverage at every severity level.",
+    isDefault: false,
+    sortOrder: 2,
+    coverageHours: "24x7x365 for all severities",
+    criticalResponseMinutes: 10,
+    highResponseMinutes: 20,
+    mediumResponseMinutes: 60,
+    lowResponseMinutes: 240,
+    criticalResolutionHours: 2,
+    highResolutionHours: 4,
+    mediumResolutionHours: 8,
+    lowResolutionHours: 24,
+    uptimeGuaranteePct: 99.95,
+    escalationProcess:
+      "Tier 1 support engineer triages on receipt, 24x7 for all severities. Any issue not resolved within its resolution target automatically escalates to a senior/Tier 2 engineer; any Critical issue still open at 1.5x its resolution target escalates immediately to a service delivery manager and the assigned vCIO for direct client contact and a revised estimate.",
+    exclusions: STANDARD_EXCLUSIONS,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Master Service Agreement — standing legal/commercial terms (Settings →
+// MSA terms), merged with a quote's tier/SLA/line items when an MSA is
+// generated (src/server/msa.ts). Everything here is a starting template,
+// NOT legal advice — have an attorney licensed in your state review and
+// customize this before relying on it in a real agreement with a customer.
+// ---------------------------------------------------------------------------
+
+export type LiabilityCapType = "FEES_PAID_MULTIPLE" | "FIXED_AMOUNT";
+
+// Who may exercise the "termination for convenience" clause (Section 13).
+// terminationForConvenienceNoticeDays (below) is the notice period either
+// side must give — this only controls which side(s) get the right at all.
+export type TerminationDirection = "BOTH" | "PROVIDER_ONLY" | "CLIENT_ONLY";
+
+export type MsaSettings = {
+  providerLegalName: string;
+  providerAddress: string;
+  providerSignerName: string;
+  providerSignerTitle: string;
+
+  initialTermMonths: number;
+  autoRenew: boolean;
+  renewalTermMonths: number;
+  nonRenewalNoticeDays: number;
+
+  paymentDueDays: number;
+  lateFeePct: number; // per month, on overdue balances
+  annualPriceIncreaseCapPct: number; // 0 = no stated cap
+  suspensionForNonPaymentDays: number; // days past due before Provider may suspend services without liability
+
+  terminationForConvenienceDirection: TerminationDirection;
+  terminationForConvenienceNoticeDays: number;
+  terminationForCauseCureDays: number;
+
+  liabilityCapType: LiabilityCapType;
+  liabilityCapMonths: number; // used when liabilityCapType === FEES_PAID_MULTIPLE
+  liabilityCapFixedAmount: number; // used when liabilityCapType === FIXED_AMOUNT
+  excludesConsequentialDamages: boolean;
+
+  confidentialityYears: number;
+  dataProtectionSummary: string;
+  ipOwnershipSummary: string;
+  insuranceRequirementSummary: string;
+  disputeResolutionSummary: string;
+  governingLawState: string;
+
+  // Additional protections for the Provider side — all editable text so
+  // wording can be adjusted, but seeded with standard MSP-industry language.
+  warrantyDisclaimerSummary: string; // disclaims implied warranties beyond what's explicitly promised
+  securityDisclaimerSummary: string; // no guarantee against all cyberattacks/breaches despite reasonable safeguards
+  clientIndemnitySummary: string; // client indemnifies Provider for claims from client's own data/noncompliance/misuse
+  thirdPartyDisclaimerSummary: string; // not liable for third-party vendor/software/ISP failures
+  independentContractorSummary: string; // Provider is an independent contractor, not Client's employee/agent/partner
+  subcontractorsSummary: string; // Provider may use qualified subcontractors and remains responsible for their work
+};
+
+export const DEFAULT_MSA_SETTINGS: MsaSettings = {
+  providerLegalName: "",
+  providerAddress: "",
+  providerSignerName: "",
+  providerSignerTitle: "",
+
+  initialTermMonths: 12,
+  autoRenew: true,
+  renewalTermMonths: 12,
+  nonRenewalNoticeDays: 60,
+
+  paymentDueDays: 15,
+  lateFeePct: 1.5,
+  annualPriceIncreaseCapPct: 0,
+  suspensionForNonPaymentDays: 10,
+
+  terminationForConvenienceDirection: "BOTH",
+  terminationForConvenienceNoticeDays: 60,
+  terminationForCauseCureDays: 15,
+
+  liabilityCapType: "FEES_PAID_MULTIPLE",
+  liabilityCapMonths: 6,
+  liabilityCapFixedAmount: 25000,
+  excludesConsequentialDamages: true,
+
+  confidentialityYears: 3,
+  dataProtectionSummary:
+    "Provider will implement and maintain commercially reasonable administrative, technical, and physical safeguards designed to protect client data encountered while delivering the services, and will not access, use, or disclose client data except as needed to deliver the services or as required by law.",
+  ipOwnershipSummary:
+    "Client retains ownership of its own data, accounts, and pre-existing intellectual property. Provider retains ownership of its own pre-existing tools, scripts, documentation templates, and methodologies, and grants client a non-exclusive license to use any deliverables created specifically for client under this agreement.",
+  insuranceRequirementSummary:
+    "Provider will maintain commercially reasonable general liability, professional liability (errors & omissions), and cyber liability insurance for the duration of this agreement, and will provide a certificate of insurance on reasonable request.",
+  disputeResolutionSummary:
+    "The parties will first attempt to resolve any dispute through good-faith negotiation between designated representatives. Unresolved disputes will be subject to the exclusive jurisdiction of the state and federal courts located in the governing law state below.",
+  governingLawState: "",
+
+  warrantyDisclaimerSummary:
+    "Provider warrants that services will be performed in a professional and workmanlike manner consistent with generally accepted industry standards. EXCEPT AS EXPRESSLY STATED IN THIS AGREEMENT, PROVIDER DISCLAIMS ALL OTHER WARRANTIES, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. Provider does not warrant that the services will be uninterrupted or error-free.",
+  securityDisclaimerSummary:
+    "Provider will implement and maintain the security measures described in this Agreement and the attached Statement of Work using commercially reasonable efforts. Client acknowledges that no IT environment can be made completely secure, and that Provider does not guarantee that any system will be free from cyberattack, unauthorized access, malware, ransomware, or data breach. Provider's obligations following a security incident are limited to the incident response services, if any, described in the Statement of Work; Provider is not a guarantor or insurer of Client's data or systems.",
+  clientIndemnitySummary:
+    "Client will indemnify, defend, and hold harmless Provider from and against third-party claims, damages, and reasonable expenses (including attorneys' fees) arising out of: (a) Client's data, content, or business operations; (b) Client's breach of this Agreement or violation of applicable law; (c) Client's use of the services in combination with equipment, software, or data not provided by Provider; or (d) instructions given by Client that Provider implemented in good faith.",
+  thirdPartyDisclaimerSummary:
+    "Some services rely on third-party hardware, software, cloud platforms, or connectivity (e.g., internet service providers, software publishers, cloud vendors) that Provider does not own or control. Provider is not responsible for the acts, omissions, outages, price changes, or discontinuation of any third-party product or service, and passes through only the warranties (if any) that the applicable third party provides.",
+  independentContractorSummary:
+    "Provider is an independent contractor. Nothing in this Agreement creates an employment, agency, joint venture, or partnership relationship between the parties. Provider is solely responsible for its own employees, subcontractors, taxes, benefits, and insurance.",
+  subcontractorsSummary:
+    "Provider may use qualified subcontractors to perform portions of the services and remains responsible for the performance of the services as a whole.",
+};
+
+// ---------------------------------------------------------------------------
 // Pre-quote checklist template. Ported from "Pre-Quote CFO Checklist".
 // ---------------------------------------------------------------------------
 

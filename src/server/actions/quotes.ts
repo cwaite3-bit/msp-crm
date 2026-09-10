@@ -360,6 +360,7 @@ export async function updateQuoteMeta(
   data: {
     title?: string;
     serviceTierId?: string | null;
+    slaId?: string | null;
     contactId?: string | null;
     notesToClient?: string;
     internalNotes?: string;
@@ -375,6 +376,7 @@ export async function updateQuoteMeta(
     .set({
       ...(data.title !== undefined ? { title: data.title } : {}),
       ...(data.serviceTierId !== undefined ? { serviceTierId: data.serviceTierId } : {}),
+      ...(data.slaId !== undefined ? { slaId: data.slaId } : {}),
       ...(data.contactId !== undefined ? { contactId: data.contactId } : {}),
       ...(data.notesToClient !== undefined ? { notesToClient: data.notesToClient } : {}),
       ...(data.internalNotes !== undefined ? { internalNotes: data.internalNotes } : {}),
@@ -482,7 +484,7 @@ export async function addCustomLineItem(
 export async function updateLineItem(
   quoteId: string,
   lineItemId: string,
-  data: { quantity?: string; unitPrice?: string }
+  data: { quantity?: string; unitPrice?: string; description?: string }
 ) {
   await requireUser();
   const [item] = await db.select().from(quoteLineItems).where(eq(quoteLineItems.id, lineItemId)).limit(1);
@@ -496,6 +498,7 @@ export async function updateLineItem(
       quantity: String(qty),
       unitPrice: String(price),
       lineTotal: (qty * price).toFixed(2),
+      ...(data.description !== undefined ? { description: data.description || null } : {}),
     })
     .where(eq(quoteLineItems.id, lineItemId));
 

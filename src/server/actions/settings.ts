@@ -10,16 +10,19 @@ import {
   DEFAULT_SCOPE_MATRIX,
   DEFAULT_CHECKLIST_TEMPLATE,
   DEFAULT_M365_PLANS,
+  DEFAULT_MSA_SETTINGS,
   type RateCard,
   type ScopeMatrixRow,
   type ChecklistTemplateItem,
   type M365Plan,
+  type MsaSettings,
 } from "@/server/pricing-data";
 
 const RATE_CARD_KEY = "pricingRateCard";
 const SCOPE_MATRIX_KEY = "scopeMatrix";
 const CHECKLIST_TEMPLATE_KEY = "checklistTemplate";
 const M365_PLANS_KEY = "m365Plans";
+const MSA_SETTINGS_KEY = "msaSettings";
 
 async function requireUser() {
   const session = await auth();
@@ -125,6 +128,30 @@ export async function resetM365PlansToDefault() {
   revalidatePath("/settings");
   revalidatePath("/quotes");
   return DEFAULT_M365_PLANS;
+}
+
+// ---- MSA standing terms ----
+
+export async function getMsaSettings(): Promise<MsaSettings> {
+  await requireUser();
+  const stored = await getSetting(MSA_SETTINGS_KEY, DEFAULT_MSA_SETTINGS);
+  // Merge over defaults so a field added after a customer already saved
+  // settings (e.g. a future new MSA field) doesn't come back undefined.
+  return { ...DEFAULT_MSA_SETTINGS, ...stored };
+}
+
+// No-auth read — the rendered MSA (staff preview, public signing page, and
+// the generated PDF) needs these terms without requiring a login.
+export async function getMsaSettingsPublic(): Promise<MsaSettings> {
+  const stored = await getSetting(MSA_SETTINGS_KEY, DEFAULT_MSA_SETTINGS);
+  return { ...DEFAULT_MSA_SETTINGS, ...stored };
+}
+
+export async function updateMsaSettings(settings: MsaSettings) {
+  await requireAdmin();
+  await setSetting(MSA_SETTINGS_KEY, settings);
+  revalidatePath("/settings");
+  revalidatePath("/quotes");
 }
 
 // ---- Checklist template ----
