@@ -541,6 +541,69 @@ export async function setQuoteStatus(quoteId: string, status: "DRAFT" | "SENT" |
   revalidatePath(`/quotes/${quoteId}`);
 }
 
+// Wipes a quote back to blank so staff can redo it from scratch, without
+// losing its quote number, customer/contact, or public link. Clears
+// Discovery (quantities/riskFactors), add-ons, every line item (both
+// MANUAL and ENGINE), the pre-quote checklist (reseeded from the current
+// template, same as a brand-new quote), every cached engine/guardrail
+// field, and the service tier (back to the default tier) — and also
+// reverts status to DRAFT and clears the sent/viewed/accepted/rejected
+// timestamps, since those describe a version of the quote that no longer
+// exists once its content is wiped. Deal-level metadata (title, contact,
+// discount/tax, notes, valid-until) is left untouched — only pricing-input
+// state is reset. Refuses outright on a quote that's already been invoiced
+// in QuickBooks, since orphaning a real invoice record would be worse than
+// leaving the quote as-is; the caller should create a new quote instead.
+export async function resetQuote(quoteId: string) {
+  await requireUser();
+  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+  if (!quote) throw new Error("Quote not found");
+  if (quote.quickbooksInvoiceId) {
+    throw new Error(
+      "This quote has already been invoiced in QuickBooks — resetting it here would orphan that invoice. Create a new quote instead."
+    );
+  }
+
+  const [defaultTier] = await db.select().from(serviceTiers).where(eq(serviceTiers.isDefault, true)).limit(1);
+  const checklistTemplate = await getChecklistTemplate();
+
+  await db.delete(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
+
+  await db
+    .update(quotes)
+    .set({
+      status: "DRAFT",
+      serviceTierId: defaultTier?.id || null,
+      quantities: EMPTY_QUANTITIES,
+      riskFactors: DEFAULT_RISK_FACTORS,
+      addOnSelections: EMPTY_ADD_ONS,
+      checklist: checklistTemplate.map((item) => ({ key: item.key, status: "Review", note: "" })),
+      recommendedTier: null,
+      riskAdjustmentPct: null,
+      planFitStatus: null,
+      managerApprovalRequired: false,
+      grossMarginPct: null,
+      marginStatus: null,
+      waiveMinimumMrr: false,
+      subtotalMonthly: "0",
+      subtotalOneTime: "0",
+      totalMonthly: "0",
+      totalOneTime: "0",
+      sentAt: null,
+      firstViewedAt: null,
+      lastViewedAt: null,
+      acceptedAt: null,
+      acceptedByName: null,
+      acceptedIp: null,
+      rejectedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(quotes.id, quoteId));
+
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath(`/customers/${quote.customerId}`);
+}
+
 export async function deleteQuote(quoteId: string) {
   await requireUser();
   const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);

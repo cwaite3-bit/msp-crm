@@ -3,8 +3,8 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Send, Link2, ExternalLink, Trash2, ReceiptText } from "lucide-react";
-import { setQuoteStatus, deleteQuote } from "@/server/actions/quotes";
+import { Send, Link2, ExternalLink, Trash2, ReceiptText, RotateCcw } from "lucide-react";
+import { setQuoteStatus, deleteQuote, resetQuote } from "@/server/actions/quotes";
 import { pushQuoteToQuickBooks } from "@/server/actions/quickbooks";
 import { toast } from "sonner";
 import type { quotes } from "@/server/db/schema";
@@ -32,10 +32,40 @@ export function QuoteActions({ quote }: { quote: Quote }) {
   }
 
   function remove() {
-    if (!confirm("Delete this quote? This cannot be undone.")) return;
+    const invoicedWarning = quote.quickbooksInvoiceId
+      ? " This quote has already been invoiced in QuickBooks — deleting it here will NOT delete or void that invoice, so your QuickBooks records and this CRM will fall out of sync unless you void the invoice there yourself."
+      : "";
+    if (
+      !confirm(
+        `Delete quote #${quote.quoteNumber}? This permanently removes it, all of its line items, and its full history (sent/viewed/accepted events).${invoicedWarning} This cannot be undone.`
+      )
+    )
+      return;
     startTransition(async () => {
       await deleteQuote(quote.id);
       router.push(`/customers/${quote.customerId}`);
+    });
+  }
+
+  function reset() {
+    const statusWarning =
+      quote.status !== "DRAFT"
+        ? ` This quote is currently ${quote.status}, and resetting will revert its status to DRAFT and clear its sent/viewed/accepted/declined record.`
+        : "";
+    if (
+      !confirm(
+        `Reset quote #${quote.quoteNumber} to blank? This permanently clears its Discovery inputs, add-ons, and every line item so you can redo it from scratch.${statusWarning} This cannot be undone.`
+      )
+    )
+      return;
+    startTransition(async () => {
+      try {
+        await resetQuote(quote.id);
+        router.refresh();
+        toast.success("Quote reset — start fresh from Discovery");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not reset this quote");
+      }
     });
   }
 
@@ -74,7 +104,26 @@ export function QuoteActions({ quote }: { quote: Quote }) {
       {quote.quickbooksInvoiceId && (
         <span className="text-xs text-emerald-700">Invoiced in QuickBooks ✓</span>
       )}
-      <Button variant="ghost" size="icon" onClick={remove} disabled={pending}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={reset}
+        disabled={pending || Boolean(quote.quickbooksInvoiceId)}
+        title={
+          quote.quickbooksInvoiceId
+            ? "Already invoiced in QuickBooks — create a new quote instead of resetting this one"
+            : "Clear Discovery, add-ons, and every line item and start this quote over from blank"
+        }
+      >
+        <RotateCcw className="h-4 w-4" /> Start over
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={remove}
+        disabled={pending}
+        title="Delete this quote"
+      >
         <Trash2 className="h-4 w-4 text-slate-400" />
       </Button>
     </div>
