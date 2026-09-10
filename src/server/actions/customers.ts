@@ -102,15 +102,23 @@ export async function updateCustomer(customerId: string, formData: FormData) {
 
 export async function searchCustomers(query: string) {
   await requireUser();
-  if (!query) {
-    return db.select().from(customers).orderBy(desc(customers.createdAt)).limit(50);
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return db.select().from(customers).orderBy(desc(customers.createdAt)).limit(100);
   }
   return db
     .select()
     .from(customers)
-    .where(or(ilike(customers.name, `%${query}%`), ilike(customers.email, `%${query}%`)))
+    .where(
+      or(
+        ilike(customers.name, `%${trimmed}%`),
+        ilike(customers.email, `%${trimmed}%`),
+        ilike(customers.phone, `%${trimmed}%`),
+        ilike(customers.industry, `%${trimmed}%`)
+      )
+    )
     .orderBy(desc(customers.createdAt))
-    .limit(50);
+    .limit(100);
 }
 
 export async function addContact(customerId: string, formData: FormData) {

@@ -1,10 +1,11 @@
 "use server";
 
 import { db } from "@/server/db";
-import { quotes, quoteLineItems, quoteEvents, customers, products, quickbooksConnections } from "@/server/db/schema";
+import { quotes, quoteLineItems, quoteEvents, customers, products, quickbooksConnections, msaDocuments } from "@/server/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { auth } from "@/auth";
 import { findOrCreateQboCustomer, findOrCreateQboItem, createQboInvoice } from "@/server/quickbooks/sync";
+import { getMsaSettings } from "@/server/actions/settings";
 import { revalidatePath } from "next/cache";
 
 async function requireAdmin() {
@@ -38,6 +39,21 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
     const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
     if (!quote) throw new Error("Quote not found");
     if (quote.status !== "ACCEPTED") throw new Error("Only accepted quotes can be invoiced");
+
+    // The first invoice only goes out once the customer has actually signed
+    // the MSA — invoicing off of an accepted-but-unsigned quote would mean
+    // billing for a contract that isn't executed yet. See the deployment
+    // guide for why this is a staff-triggered button rather than firing
+    // automatically the moment the MSA is signed.
+    const [msaDoc] = await db
+      .select()
+      .from(msaDocuments)
+      .where(eq(msaDocuments.quoteId, quoteId))
+      .orderBy(desc(msaDocuments.createdAt))
+      .limit(1);
+    if (!msaDoc || msaDoc.status !== "SIGNED") {
+      throw new Error("This quote's Master Service Agreement hasn't been signed yet — generate it and get it signed before invoicing.");
+    }
 
     const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
     if (!customer) throw new Error("Customer not found");
@@ -86,10 +102,23 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
     }
 
     // 3. Create the invoice. This invoices everything currently on the quote
-    //    (one-time fees + first month of recurring services). Ongoing monthly
-    //    billing beyond this first invoice needs a recurring mechanism —
-    //    see the deployment guide for options.
-    const invoice = await createQboInvoice({ customerId: qboCustomerId, lines: resolvedLines });
+    //    (one-time fees + first month of recurring services) — standard MSP
+    //    practice is to bill recurring managed services in ADVANCE (for the
+    //    coming period, not the one just finished), with one-time/onboarding
+    //    fees also due at signing, which is exactly what a single "first
+    //    invoice" covering both does. Ongoing monthly billing beyond this
+    //    first invoice needs a recurring mechanism — see the deployment
+    //    guide for options.
+    const msaSettings = await getMsaSettings();
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + msaSettings.paymentDueDays);
+
+    const invoice = await createQboInvoice({
+      customerId: qboCustomerId,
+      lines: resolvedLines,
+      dueDate: dueDate.toISOString().slice(0, 10),
+      privateNote: `MSP CRM quote #${quote.quoteNumber} — first invoice after signed MSA.`,
+    });
 
     await db
       .update(quotes)

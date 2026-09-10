@@ -68,22 +68,30 @@ export async function findOrCreateQboItem(name: string) {
 export async function createQboInvoice(input: {
   customerId: string;
   lines: { itemId: string; description: string; quantity: number; unitPrice: number }[];
+  /** ISO date (YYYY-MM-DD) the invoice is due, per the customer's agreed payment terms. */
+  dueDate?: string;
+  /** Internal-only note (shows in QuickBooks, not on the customer-facing invoice) for traceability back to this app. */
+  privateNote?: string;
 }) {
+  const payload: Record<string, unknown> = {
+    CustomerRef: { value: input.customerId },
+    Line: input.lines.map((line) => ({
+      Amount: Number((line.quantity * line.unitPrice).toFixed(2)),
+      DetailType: "SalesItemLineDetail",
+      Description: line.description,
+      SalesItemLineDetail: {
+        ItemRef: { value: line.itemId },
+        Qty: line.quantity,
+        UnitPrice: line.unitPrice,
+      },
+    })),
+  };
+  if (input.dueDate) payload.DueDate = input.dueDate;
+  if (input.privateNote) payload.PrivateNote = input.privateNote;
+
   const created = (await qboFetch("/invoice", {
     method: "POST",
-    body: JSON.stringify({
-      CustomerRef: { value: input.customerId },
-      Line: input.lines.map((line) => ({
-        Amount: Number((line.quantity * line.unitPrice).toFixed(2)),
-        DetailType: "SalesItemLineDetail",
-        Description: line.description,
-        SalesItemLineDetail: {
-          ItemRef: { value: line.itemId },
-          Qty: line.quantity,
-          UnitPrice: line.unitPrice,
-        },
-      })),
-    }),
+    body: JSON.stringify(payload),
   })) as { Invoice: { Id: string; DocNumber?: string } };
   return created.Invoice;
 }

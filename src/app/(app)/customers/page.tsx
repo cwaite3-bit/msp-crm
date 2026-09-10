@@ -1,14 +1,19 @@
-import { db } from "@/server/db";
-import { customers } from "@/server/db/schema";
-import { desc } from "drizzle-orm";
+import { searchCustomers } from "@/server/actions/customers";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { NewCustomerDialog } from "./new-customer-dialog";
+import { CustomerSearch } from "./customer-search";
 
-export default async function CustomersPage() {
-  const rows = await db.select().from(customers).orderBy(desc(customers.createdAt));
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  const query = q ?? "";
+  const rows = await searchCustomers(query);
 
   return (
     <div className="flex flex-col gap-6">
@@ -19,6 +24,8 @@ export default async function CustomersPage() {
         </div>
         <NewCustomerDialog />
       </div>
+
+      <CustomerSearch initialQuery={query} />
 
       <Card>
         <CardContent className="p-0">
@@ -53,7 +60,7 @@ export default async function CustomersPage() {
               {rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="py-8 text-center text-slate-500">
-                    No customers yet. Add your first one to get started.
+                    {query ? `No customers match "${query}".` : "No customers yet. Add your first one to get started."}
                   </TableCell>
                 </TableRow>
               )}

@@ -12,7 +12,7 @@ import type { InferSelectModel } from "drizzle-orm";
 
 type Quote = InferSelectModel<typeof quotes>;
 
-export function QuoteActions({ quote }: { quote: Quote }) {
+export function QuoteActions({ quote, msaSigned }: { quote: Quote; msaSigned: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -73,7 +73,7 @@ export function QuoteActions({ quote }: { quote: Quote }) {
     startTransition(async () => {
       const result = await pushQuoteToQuickBooks(quote.id);
       if (result.ok) {
-        toast.success("Invoice created in QuickBooks");
+        toast.success("First invoice created in QuickBooks");
       } else {
         toast.error(result.error || "QuickBooks sync failed");
       }
@@ -97,12 +97,17 @@ export function QuoteActions({ quote }: { quote: Quote }) {
         </Button>
       )}
       {quote.status === "ACCEPTED" && !quote.quickbooksInvoiceId && (
-        <Button size="sm" onClick={pushToQb} disabled={pending}>
-          <ReceiptText className="h-4 w-4" /> Send to QuickBooks
+        <Button
+          size="sm"
+          onClick={pushToQb}
+          disabled={pending || !msaSigned}
+          title={msaSigned ? undefined : "Available once the customer has signed the Master Service Agreement below"}
+        >
+          <ReceiptText className="h-4 w-4" /> Send first invoice to QuickBooks
         </Button>
       )}
       {quote.quickbooksInvoiceId && (
-        <span className="text-xs text-emerald-700">Invoiced in QuickBooks ✓</span>
+        <span className="text-xs text-emerald-700">First invoice sent to QuickBooks ✓</span>
       )}
       <Button
         variant="outline"

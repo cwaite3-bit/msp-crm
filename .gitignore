@@ -42,3 +42,7 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# local scratch copies of Claude Project docs (the docs themselves live in
+# the attached Claude Project, not this repo) - not part of the app
+/scratchdocs/
