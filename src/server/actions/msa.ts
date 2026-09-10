@@ -10,6 +10,7 @@ import { buildMsaContent, type MsaContent } from "@/server/msa";
 import { renderMsaPdf } from "@/server/msa-pdf";
 import { getMsaSettingsPublic } from "@/server/actions/settings";
 import { sendEmail } from "@/server/email";
+import { notifyQuoteCreator, appUrl } from "@/server/notify";
 
 async function requireUser() {
   const session = await auth();
@@ -160,6 +161,14 @@ export async function signMsaPublic(token: string, signedByName: string, signedB
       signedIp: ip,
     })
     .where(eq(msaDocuments.id, doc.id));
+
+  const content = doc.content as MsaContent;
+  await notifyQuoteCreator(
+    doc.quoteId,
+    `MSA signed — quote #${content.quoteNumber}`,
+    `<p><strong>${signedByName}</strong>${signedByTitle ? ` (${signedByTitle})` : ""} just signed the Master Service Agreement for quote #${content.quoteNumber} — ${content.customerName}. You can now send the first invoice to QuickBooks.</p>
+<p><a href="${appUrl()}/quotes/${doc.quoteId}">Open the quote</a></p>`
+  );
 
   revalidatePath(`/quotes/${doc.quoteId}`);
 }

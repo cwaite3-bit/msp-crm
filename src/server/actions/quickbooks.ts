@@ -6,6 +6,7 @@ import { eq, desc } from "drizzle-orm";
 import { auth } from "@/auth";
 import { findOrCreateQboCustomer, findOrCreateQboItem, createQboInvoice } from "@/server/quickbooks/sync";
 import { getMsaSettings } from "@/server/actions/settings";
+import { notifyQuoteCreator, appUrl } from "@/server/notify";
 import { revalidatePath } from "next/cache";
 
 async function requireAdmin() {
@@ -134,6 +135,16 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
       type: "QUICKBOOKS_SYNCED",
       detail: `Invoice ${invoice.DocNumber || invoice.Id}`,
     });
+
+    // Confirmation email to whoever created the quote - mostly a paper
+    // trail, since the person who clicked this button already knows, but
+    // useful when the quote's creator isn't the one who pushed the invoice.
+    await notifyQuoteCreator(
+      quoteId,
+      `First invoice created in QuickBooks — quote #${quote.quoteNumber}`,
+      `<p>The first invoice for quote #${quote.quoteNumber}${quote.title ? ` — "${quote.title}"` : ""} (${customer.name}) was created in QuickBooks${invoice.DocNumber ? ` as invoice ${invoice.DocNumber}` : ""}.</p>
+<p><a href="${appUrl()}/quotes/${quoteId}">Open the quote</a></p>`
+    );
 
     revalidatePath(`/quotes/${quoteId}`);
     return { ok: true };

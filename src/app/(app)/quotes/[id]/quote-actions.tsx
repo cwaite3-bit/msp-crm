@@ -25,9 +25,14 @@ export function QuoteActions({ quote, msaSigned }: { quote: Quote; msaSigned: bo
 
   function send() {
     startTransition(async () => {
-      await setQuoteStatus(quote.id, "SENT");
+      const result = await setQuoteStatus(quote.id, "SENT");
       router.refresh();
-      toast.success("Marked as sent");
+      if (result?.emailSent) {
+        toast.success("Marked as sent and emailed to the customer");
+      } else {
+        toast.success("Marked as sent");
+        if (result?.emailError) toast.error(`Email not sent: ${result.emailError}`);
+      }
     });
   }
 

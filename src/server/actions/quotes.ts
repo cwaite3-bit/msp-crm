@@ -34,6 +34,7 @@ import {
   type AddOnSelections,
 } from "@/server/pricing-rules";
 import { TIER_LABELS, tierKeyFromName, type TierKey } from "@/server/pricing-data";
+import { notifyQuoteCreator, notifyCustomerQuoteSent, appUrl } from "@/server/notify";
 
 async function requireUser() {
   const session = await auth();
@@ -542,6 +543,16 @@ export async function setQuoteStatus(quoteId: string, status: "DRAFT" | "SENT" |
   await db.update(quotes).set(patch).where(eq(quotes.id, quoteId));
   await db.insert(quoteEvents).values({ quoteId, type: status === "SENT" ? "SENT" : "REJECTED" });
   revalidatePath(`/quotes/${quoteId}`);
+
+  // Marking a quote Sent is also what actually emails the client their
+  // quote link - previously this just flipped status and staff had to
+  // paste the "Copy client link" URL into their own email by hand. Return
+  // the result (rather than throwing) so the button can tell staff whether
+  // it actually went out without blocking the status change itself.
+  if (status === "SENT") {
+    const result = await notifyCustomerQuoteSent(quoteId);
+    return { emailSent: result.sent, emailError: result.error };
+  }
 }
 
 // Wipes a quote back to blank so staff can redo it from scratch, without
@@ -655,6 +666,14 @@ export async function acceptQuotePublic(publicToken: string, acceptedByName: str
   // Mark the customer ACTIVE once they've accepted a quote.
   await db.update(customers).set({ status: "ACTIVE" }).where(eq(customers.id, quote.customerId));
 
+  const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
+  await notifyQuoteCreator(
+    quote.id,
+    `Quote #${quote.quoteNumber} accepted${customer ? ` — ${customer.name}` : ""}`,
+    `<p><strong>${acceptedByName}</strong> just accepted quote #${quote.quoteNumber}${quote.title ? ` — "${quote.title}"` : ""}${customer ? ` for ${customer.name}` : ""}.</p>
+<p><a href="${appUrl()}/quotes/${quote.id}">Open the quote</a></p>`
+  );
+
   revalidatePath(`/quotes/${quote.id}`);
 }
 
@@ -663,6 +682,15 @@ export async function rejectQuotePublic(publicToken: string) {
   if (!quote) throw new Error("Quote not found");
   await db.update(quotes).set({ status: "REJECTED", rejectedAt: new Date() }).where(eq(quotes.id, quote.id));
   await db.insert(quoteEvents).values({ quoteId: quote.id, type: "REJECTED" });
+
+  const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
+  await notifyQuoteCreator(
+    quote.id,
+    `Quote #${quote.quoteNumber} declined${customer ? ` — ${customer.name}` : ""}`,
+    `<p>Quote #${quote.quoteNumber}${quote.title ? ` — "${quote.title}"` : ""}${customer ? ` for ${customer.name}` : ""} was declined by the customer.</p>
+<p><a href="${appUrl()}/quotes/${quote.id}">Open the quote</a></p>`
+  );
+
   revalidatePath(`/quotes/${quote.id}`);
 }
 
