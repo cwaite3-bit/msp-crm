@@ -50,6 +50,19 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRoleEnum("role").notNull().default("STAFF"),
   active: boolean("active").notNull().default(true),
+
+  // Shown to the client on the quote page and the MSA, alongside whichever
+  // staff member generated that document (quotes.createdById) — so the
+  // client sees a face and a way to reach their actual point of contact
+  // instead of a generic company signature. photoUrl is a data: URI (small,
+  // client-side-resized JPEG) rather than a file path, matching this app's
+  // existing pattern for the Lockdown IT logo — Vercel's serverless
+  // filesystem isn't a place to durably store uploaded files. Nullable:
+  // accounts with no photo yet just render without one.
+  photoUrl: text("photo_url"),
+  phone: text("phone"),
+  title: text("title"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -213,6 +226,13 @@ export const quoteStatusEnum = pgEnum("quote_status", [
   "EXPIRED",
 ]);
 
+// How the client pays for the recurring services on this quote — same plan
+// and services either way, just monthly vs. one annual prepayment at a
+// discount (Settings → Billing options sets the discount %). Purely a
+// payment-schedule choice; it doesn't change quantities/rate-card pricing,
+// which is why it lives on the quote rather than in the pricing engine.
+export const billingFrequencyEnum = pgEnum("billing_frequency", ["MONTHLY", "ANNUAL"]);
+
 export const quotes = pgTable(
   "quotes",
   {
@@ -230,6 +250,12 @@ export const quotes = pgTable(
 
     title: text("title").notNull().default("MSP Services Quote"),
     status: quoteStatusEnum("status").notNull().default("DRAFT"),
+    // Defaults to MONTHLY; the client can switch to ANNUAL (prepaid, at a
+    // discount) when accepting on the public quote page, or staff can set
+    // it directly from the quote's Settings tab. Reflected in the generated
+    // MSA's Fees & Payment Terms section and in what gets invoiced through
+    // QuickBooks.
+    billingFrequency: billingFrequencyEnum("billing_frequency").notNull().default("MONTHLY"),
     serviceTierId: text("service_tier_id").references(() => serviceTiers.id),
     // Service level agreement attached to this quote — independent of the
     // Bronze/Silver/Gold service tier above. Nullable: older quotes and any

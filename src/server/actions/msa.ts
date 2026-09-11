@@ -1,14 +1,14 @@
 "use server";
 
 import { db } from "@/server/db";
-import { quotes, customers, contacts, serviceTiers, slas, quoteLineItems, msaDocuments } from "@/server/db/schema";
+import { quotes, customers, contacts, serviceTiers, slas, quoteLineItems, msaDocuments, users } from "@/server/db/schema";
 import { auth } from "@/auth";
 import { eq, desc } from "drizzle-orm";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { buildMsaContent, type MsaContent } from "@/server/msa";
 import { renderMsaPdf } from "@/server/msa-pdf";
-import { getMsaSettingsPublic } from "@/server/actions/settings";
+import { getMsaSettingsPublic, getBillingSettingsPublic } from "@/server/actions/settings";
 import { sendEmail } from "@/server/email";
 import { notifyQuoteCreator, appUrl } from "@/server/notify";
 
@@ -28,12 +28,14 @@ async function loadContentInputs(quoteId: string) {
   const sla = quote.slaId ? (await db.select().from(slas).where(eq(slas.id, quote.slaId)).limit(1))[0] ?? null : null;
   const lineItems = await db.select().from(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
   const msaSettings = await getMsaSettingsPublic();
+  const billingSettings = await getBillingSettingsPublic();
+  const creator = (await db.select().from(users).where(eq(users.id, quote.createdById)).limit(1))[0] ?? null;
 
-  return { quote, customer, contact, tier, sla, lineItems, msaSettings };
+  return { quote, customer, contact, tier, sla, lineItems, msaSettings, billingSettings, creator };
 }
 
 async function buildContentForQuote(quoteId: string): Promise<MsaContent> {
-  const { quote, customer, contact, tier, sla, lineItems, msaSettings } = await loadContentInputs(quoteId);
+  const { quote, customer, contact, tier, sla, lineItems, msaSettings, billingSettings, creator } = await loadContentInputs(quoteId);
   return buildMsaContent({
     quote: {
       quoteNumber: quote.quoteNumber,
@@ -42,6 +44,7 @@ async function buildContentForQuote(quoteId: string): Promise<MsaContent> {
       totalOneTime: quote.totalOneTime,
       validUntil: quote.validUntil,
       notesToClient: quote.notesToClient,
+      billingFrequency: quote.billingFrequency,
     },
     customer: {
       name: customer.name,
@@ -81,6 +84,10 @@ async function buildContentForQuote(quoteId: string): Promise<MsaContent> {
       lineTotal: li.lineTotal,
     })),
     msaSettings,
+    annualDiscountPct: billingSettings.annualDiscountPct,
+    accountContact: creator
+      ? { name: creator.name, title: creator.title, email: creator.email, phone: creator.phone, photoUrl: creator.photoUrl }
+      : null,
   });
 }
 
@@ -178,7 +185,7 @@ export async function signMsaPublic(token: string, signedByName: string, signedB
     doc.quoteId,
     `MSA signed — quote #${content.quoteNumber}`,
     `<p><strong>${signedByName}</strong>${signedByTitle ? ` (${signedByTitle})` : ""} just signed the Master Service Agreement for quote #${content.quoteNumber} — ${content.customerName}. You can now send the first invoice to QuickBooks.</p>
-<p><a href="${appUrl()}/quotes/${doc.quoteId}">Open the quote</a></p>`
+<p><a href="${await appUrl()}/quotes/${doc.quoteId}">Open the quote</a></p>`
   );
 
   revalidatePath(`/quotes/${doc.quoteId}`);
@@ -211,7 +218,12 @@ export async function sendMsaEmail(docId: string, toEmail: string): Promise<{ ok
     const content = doc.content as MsaContent;
 
     const pdf = await renderMsaDocumentPdf(docId);
-    const signingUrl = `${process.env.NEXT_PUBLIC_APP_URL || ""}/msa/${doc.signingToken}`;
+    // Was built straight off process.env.NEXT_PUBLIC_APP_URL, which is unset
+    // in this deployment — that produced a bare relative link ("/msa/token",
+    // no domain) in the email, which opens to a blank page from any mail
+    // client since there's nothing to resolve it against. appUrl() falls
+    // back to the actual request's Host header when the env var is missing.
+    const signingUrl = `${await appUrl()}/msa/${doc.signingToken}`;
 
     await sendEmail({
       to: toEmail,

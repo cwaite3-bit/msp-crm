@@ -32,6 +32,7 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
   );
   const [notesToClient, setNotesToClient] = useState(quote.notesToClient ?? "");
   const [internalNotes, setInternalNotes] = useState(quote.internalNotes ?? "");
+  const [billingFrequency, setBillingFrequency] = useState(quote.billingFrequency);
 
   // The service tier can also be changed elsewhere (the Plan Comparison
   // panel's "Use this plan" / "Re-apply plan" buttons), which updates
@@ -57,6 +58,7 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
         validUntil: validUntil || null,
         notesToClient,
         internalNotes,
+        billingFrequency,
         ...extra,
       });
       router.refresh();
@@ -171,6 +173,22 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
             disabled={discountType === "none"}
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label className="flex items-center gap-1.5">
+          Billing frequency
+          <HelpTip text="Monthly or annual-prepay (at the discount set in Settings → Billing options) — same plan and services either way. The client can also choose this themselves when accepting the quote; changing it here just sets the default they'll see." />
+        </Label>
+        <Select value={billingFrequency} onValueChange={(v) => setBillingFrequency(v as "MONTHLY" | "ANNUAL")}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="MONTHLY">Monthly</SelectItem>
+            <SelectItem value="ANNUAL">Annual (prepaid)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex flex-col gap-1.5">

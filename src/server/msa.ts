@@ -38,6 +38,14 @@ export type MsaSlaSnapshot = {
   exclusions: string | null;
 };
 
+export type MsaAccountContactSnapshot = {
+  name: string;
+  title: string | null;
+  email: string | null;
+  phone: string | null;
+  photoUrl: string | null;
+};
+
 export type MsaContent = {
   generatedAt: string; // ISO timestamp
   quoteNumber: number;
@@ -52,13 +60,30 @@ export type MsaContent = {
   lineItems: MsaLineItemSnapshot[];
   totalMonthly: string;
   totalOneTime: string;
+  billingFrequency: "MONTHLY" | "ANNUAL";
+  annualDiscountPct: number;
   validUntil: string | null;
   notesToClient: string | null;
   msaSettings: MsaSettings;
+  // Whichever staff member generated this MSA (quotes.createdById),
+  // snapshotted at generation time — same reasoning as everything else in
+  // MsaContent: frozen once SIGNED so a later staff-roster change can't
+  // silently rewrite who's shown on an already-signed agreement.
+  accountContact: MsaAccountContactSnapshot | null;
 };
 
 export function buildMsaContent(input: {
-  quote: { quoteNumber: number; title: string; totalMonthly: string; totalOneTime: string; validUntil: Date | null; notesToClient: string | null };
+  quote: {
+    quoteNumber: number;
+    title: string;
+    totalMonthly: string;
+    totalOneTime: string;
+    validUntil: Date | null;
+    notesToClient: string | null;
+    // Optional (defaults to "MONTHLY") so existing callers/tests that predate
+    // the monthly-vs-annual billing option don't need updating.
+    billingFrequency?: "MONTHLY" | "ANNUAL";
+  };
   customer: { name: string; billingStreet: string | null; billingCity: string | null; billingState: string | null; billingZip: string | null };
   contact: { firstName: string; lastName: string; email: string | null } | null;
   tier: { name: string; description: string | null } | null;
@@ -82,8 +107,12 @@ export function buildMsaContent(input: {
     | null;
   lineItems: MsaLineItemSnapshot[];
   msaSettings: MsaSettings;
+  // Both optional (default to 0 / null) for the same backward-compatibility
+  // reason as quote.billingFrequency above.
+  annualDiscountPct?: number;
+  accountContact?: MsaAccountContactSnapshot | null;
 }): MsaContent {
-  const { quote, customer, contact, tier, sla, lineItems, msaSettings } = input;
+  const { quote, customer, contact, tier, sla, lineItems, msaSettings, annualDiscountPct = 0, accountContact = null } = input;
 
   const addressParts = [customer.billingStreet, customer.billingCity, customer.billingState, customer.billingZip].filter(Boolean);
 
@@ -121,9 +150,12 @@ export function buildMsaContent(input: {
     lineItems,
     totalMonthly: quote.totalMonthly,
     totalOneTime: quote.totalOneTime,
+    billingFrequency: quote.billingFrequency ?? "MONTHLY",
+    annualDiscountPct,
     validUntil: quote.validUntil ? quote.validUntil.toISOString() : null,
     notesToClient: quote.notesToClient,
     msaSettings,
+    accountContact,
   };
 }
 
@@ -131,7 +163,10 @@ export function buildMsaContent(input: {
 // button — lets an admin see exactly how the CURRENTLY SAVED terms will
 // render into a full document, without needing a real accepted quote to
 // generate against first. Never written to the database.
-export function buildSampleMsaContent(msaSettings: MsaSettings): MsaContent {
+export function buildSampleMsaContent(
+  msaSettings: MsaSettings,
+  options?: { annualDiscountPct?: number; accountContact?: MsaAccountContactSnapshot | null }
+): MsaContent {
   return {
     generatedAt: new Date().toISOString(),
     quoteNumber: 1000,
@@ -191,9 +226,12 @@ export function buildSampleMsaContent(msaSettings: MsaSettings): MsaContent {
     ],
     totalMonthly: "1575.00",
     totalOneTime: "1500.00",
+    billingFrequency: "MONTHLY",
+    annualDiscountPct: options?.annualDiscountPct ?? 0,
     validUntil: null,
     notesToClient: null,
     msaSettings,
+    accountContact: options?.accountContact ?? null,
   };
 }
 
@@ -288,10 +326,16 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
         : undefined,
   });
 
+  const annualTotal = Number(content.totalMonthly) * 12 * (1 - content.annualDiscountPct / 100);
+  const feesParagraph =
+    content.billingFrequency === "ANNUAL"
+      ? `Client has elected to pay for recurring services annually in advance: ${money(annualTotal)}, covering a 12-month period${content.annualDiscountPct > 0 ? ` (reflecting a ${content.annualDiscountPct}% annual prepayment discount off the monthly rate)` : ""}${Number(content.totalOneTime) > 0 ? `, plus one-time fees of ${money(content.totalOneTime)}` : ""}, as itemized above. This annual fee is due again at each renewal per the Term & Renewal section above.`
+      : `Client agrees to pay the recurring monthly fee of ${money(content.totalMonthly)}${Number(content.totalOneTime) > 0 ? `, plus one-time fees of ${money(content.totalOneTime)}` : ""}, as itemized above.`;
+
   sections.push({
     heading: "Fees & Payment Terms",
     paragraphs: [
-      `Client agrees to pay the recurring monthly fee of ${money(content.totalMonthly)}${Number(content.totalOneTime) > 0 ? `, plus one-time fees of ${money(content.totalOneTime)}` : ""}, as itemized above.`,
+      feesParagraph,
       `Invoices are due within ${s.paymentDueDays} days of the invoice date. Amounts not paid when due accrue a late fee of ${s.lateFeePct}% per month on the outstanding balance, or the maximum rate permitted by law, whichever is lower.`,
       s.annualPriceIncreaseCapPct > 0
         ? `Provider may increase recurring fees effective at each renewal term, not to exceed ${s.annualPriceIncreaseCapPct}% per year, on at least 30 days' written notice.`

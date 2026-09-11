@@ -369,6 +369,7 @@ export async function updateQuoteMeta(
     discountValue?: string | null;
     taxRatePct?: string | null;
     validUntil?: string | null;
+    billingFrequency?: "MONTHLY" | "ANNUAL";
   }
 ) {
   await requireUser();
@@ -387,6 +388,7 @@ export async function updateQuoteMeta(
       ...(data.validUntil !== undefined
         ? { validUntil: data.validUntil ? new Date(data.validUntil) : null }
         : {}),
+      ...(data.billingFrequency !== undefined ? { billingFrequency: data.billingFrequency } : {}),
       updatedAt: new Date(),
     })
     .where(eq(quotes.id, quoteId));
@@ -657,7 +659,11 @@ export async function recordQuoteView(publicToken: string) {
   await db.insert(quoteEvents).values({ quoteId: quote.id, type: "VIEWED" });
 }
 
-export async function acceptQuotePublic(publicToken: string, acceptedByName: string) {
+export async function acceptQuotePublic(
+  publicToken: string,
+  acceptedByName: string,
+  billingFrequency?: "MONTHLY" | "ANNUAL"
+) {
   const [quote] = await db.select().from(quotes).where(eq(quotes.publicToken, publicToken)).limit(1);
   if (!quote) throw new Error("Quote not found");
   const hdrs = await headers();
@@ -670,6 +676,11 @@ export async function acceptQuotePublic(publicToken: string, acceptedByName: str
       acceptedAt: new Date(),
       acceptedByName,
       acceptedIp: ip,
+      // The client's payment-schedule choice (Monthly vs. Annual prepay) —
+      // see the accept flow on the public quote page. Falls back to
+      // whatever was already set on the quote (default MONTHLY) if the
+      // caller doesn't pass one, e.g. an older/cached client build.
+      ...(billingFrequency ? { billingFrequency } : {}),
     })
     .where(eq(quotes.id, quote.id));
 
@@ -683,7 +694,7 @@ export async function acceptQuotePublic(publicToken: string, acceptedByName: str
     quote.id,
     `Quote #${quote.quoteNumber} accepted${customer ? ` — ${customer.name}` : ""}`,
     `<p><strong>${acceptedByName}</strong> just accepted quote #${quote.quoteNumber}${quote.title ? ` — "${quote.title}"` : ""}${customer ? ` for ${customer.name}` : ""}.</p>
-<p><a href="${appUrl()}/quotes/${quote.id}">Open the quote</a></p>`
+<p><a href="${await appUrl()}/quotes/${quote.id}">Open the quote</a></p>`
   );
 
   revalidatePath(`/quotes/${quote.id}`);
@@ -700,7 +711,7 @@ export async function rejectQuotePublic(publicToken: string) {
     quote.id,
     `Quote #${quote.quoteNumber} declined${customer ? ` — ${customer.name}` : ""}`,
     `<p>Quote #${quote.quoteNumber}${quote.title ? ` — "${quote.title}"` : ""}${customer ? ` for ${customer.name}` : ""} was declined by the customer.</p>
-<p><a href="${appUrl()}/quotes/${quote.id}">Open the quote</a></p>`
+<p><a href="${await appUrl()}/quotes/${quote.id}">Open the quote</a></p>`
   );
 
   revalidatePath(`/quotes/${quote.id}`);

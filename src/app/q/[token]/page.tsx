@@ -1,13 +1,14 @@
 import Image from "next/image";
 import { db } from "@/server/db";
-import { quotes, quoteLineItems, customers, contacts, serviceTiers } from "@/server/db/schema";
+import { quotes, quoteLineItems, customers, contacts, serviceTiers, users } from "@/server/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { groupByCategory } from "@/server/pricing";
 import { recordQuoteView } from "@/server/actions/quotes";
-import { getRateCardPublic, getScopeMatrixPublic, getM365PlansPublic } from "@/server/actions/settings";
+import { getRateCardPublic, getScopeMatrixPublic, getM365PlansPublic, getBillingSettingsPublic } from "@/server/actions/settings";
 import { getSlaPublic } from "@/server/actions/slas";
+import { AccountContactCard } from "@/components/account-contact-card";
 import { AcceptRejectPanel } from "./accept-reject-panel";
 import { TierComparison } from "./tier-comparison";
 import { ScopeMatrixTable } from "./scope-matrix-table";
@@ -53,6 +54,8 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   const rateCard = await getRateCardPublic();
   const scopeMatrix = await getScopeMatrixPublic();
   const m365Plans = await getM365PlansPublic();
+  const billingSettings = await getBillingSettingsPublic();
+  const [creator] = await db.select().from(users).where(eq(users.id, quote.createdById)).limit(1);
   const quantities: Quantities = { ...EMPTY_QUANTITIES, ...(quote.quantities as Partial<Quantities>) };
   const risk: RiskFactors = { ...DEFAULT_RISK_FACTORS, ...(quote.riskFactors as Partial<RiskFactors>) };
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
@@ -137,6 +140,18 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
 
         {/* Body */}
         <div className="px-8 py-8">
+          {creator && (
+            <div className="mb-8">
+              <AccountContactCard
+                name={creator.name}
+                title={creator.title}
+                email={creator.email}
+                phone={creator.phone}
+                photoUrl={creator.photoUrl}
+              />
+            </div>
+          )}
+
           {hasDiscoveryData && (
             <div className="mb-10">
               <h2 className="mb-1 text-lg font-semibold text-slate-900">Three straightforward ways to engage</h2>
@@ -177,10 +192,21 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
 
           {/* Totals */}
           <div className="mt-8 overflow-hidden rounded-lg bg-slate-900 text-white">
-            <div className="flex items-center justify-between px-6 py-4">
-              <span className="text-sm font-medium text-slate-300">Monthly total</span>
-              <span className="text-2xl font-bold text-emerald-400">{formatCurrency(quote.totalMonthly)}</span>
-            </div>
+            {quote.billingFrequency === "ANNUAL" ? (
+              <div className="flex items-center justify-between px-6 py-4">
+                <span className="text-sm font-medium text-slate-300">
+                  Annual total <span className="text-slate-400">(billed upfront)</span>
+                </span>
+                <span className="text-2xl font-bold text-emerald-400">
+                  {formatCurrency(Number(quote.totalMonthly) * 12 * (1 - billingSettings.annualDiscountPct / 100))}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between px-6 py-4">
+                <span className="text-sm font-medium text-slate-300">Monthly total</span>
+                <span className="text-2xl font-bold text-emerald-400">{formatCurrency(quote.totalMonthly)}</span>
+              </div>
+            )}
             {Number(quote.totalOneTime) > 0 && (
               <div className="flex items-center justify-between border-t border-white/10 px-6 py-3">
                 <span className="text-sm font-medium text-slate-300">One-time total</span>
@@ -188,6 +214,11 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
               </div>
             )}
           </div>
+          {Number(quote.totalMonthly) > 0 && billingSettings.annualDiscountPct > 0 && quote.status !== "ACCEPTED" && (
+            <p className="mt-2 text-center text-xs text-slate-400">
+              Prefer to pay annually? Save {billingSettings.annualDiscountPct}% by choosing Annual when you accept below.
+            </p>
+          )}
 
           {hasDiscoveryData && (
             <div className="mt-8 flex flex-col gap-6">
@@ -254,6 +285,9 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
               status={quote.status}
               acceptedByName={quote.acceptedByName}
               acceptedAt={quote.acceptedAt}
+              totalMonthly={quote.totalMonthly}
+              annualDiscountPct={billingSettings.annualDiscountPct}
+              billingFrequency={quote.billingFrequency}
             />
           </div>
 

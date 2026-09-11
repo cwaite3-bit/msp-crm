@@ -23,6 +23,7 @@ import { db } from "@/server/db";
 import { quotes, users, contacts, customers } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { sendEmail, isEmailConfigured } from "@/server/email";
+import { headers } from "next/headers";
 
 export type NewCustomerLead = {
   customerId: string;
@@ -40,8 +41,32 @@ export type NewCustomerLead = {
   message: string | null;
 };
 
-export function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL || "";
+// Absolute base URL for links inside notification/MSA emails. Prefers the
+// explicit env var (set it in Vercel if you want a fixed value — e.g. a
+// custom domain), but if it's unset this used to silently fall back to ""
+// and produce a bare relative link like "/msa/<token>" with no domain at
+// all — which looks fine in code but is a dead, blank-page link the moment
+// it's clicked from an email client, since there's no page to resolve it
+// against. Falling back to the actual Host header of the request that
+// triggered the email (available here because every caller runs inside a
+// Server Action/Route Handler request) means a working absolute link goes
+// out even when NEXT_PUBLIC_APP_URL was never configured.
+export async function appUrl(): Promise<string> {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.APP_BASE_URL) return process.env.APP_BASE_URL;
+  try {
+    const hdrs = await headers();
+    const host = hdrs.get("host");
+    if (host) {
+      const proto = hdrs.get("x-forwarded-proto") || "https";
+      return `${proto}://${host}`;
+    }
+  } catch {
+    // headers() throws outside a request context (e.g. a one-off script run
+    // via tsx, like db:seed) — fall through to an empty base rather than
+    // crash a caller that doesn't actually need a link.
+  }
+  return "";
 }
 
 // Every value below comes from the public, unauthenticated customer intake
@@ -94,7 +119,7 @@ export async function notifyCustomerQuoteSent(quoteId: string): Promise<{ sent: 
   }
 
   const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
-  const url = `${appUrl()}/q/${quote.publicToken}`;
+  const url = `${await appUrl()}/q/${quote.publicToken}`;
 
   try {
     await sendEmail({
@@ -152,7 +177,7 @@ export async function notifyNewCustomerLead(lead: NewCustomerLead) {
     const html = `<p>A new customer record was just created from the website intake form:</p>
 <table cellpadding="0" cellspacing="0">${rowsHtml}</table>
 ${lead.message ? `<p style="margin-top:14px;margin-bottom:2px;color:#64748b;font-size:13px;">What they're looking for:</p><p style="white-space:pre-wrap;">${escapeHtml(lead.message)}</p>` : ""}
-<p style="margin-top:18px;"><a href="${appUrl()}/customers/${lead.customerId}">Open this customer in the CRM</a></p>`;
+<p style="margin-top:18px;"><a href="${await appUrl()}/customers/${lead.customerId}">Open this customer in the CRM</a></p>`;
 
     for (const to of recipients) {
       await sendEmail({ to, subject: `New customer lead — ${lead.companyName}`, html });

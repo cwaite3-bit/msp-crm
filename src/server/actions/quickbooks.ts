@@ -5,7 +5,7 @@ import { quotes, quoteLineItems, quoteEvents, customers, products, quickbooksCon
 import { eq, desc } from "drizzle-orm";
 import { auth } from "@/auth";
 import { findOrCreateQboCustomer, findOrCreateQboItem, createQboInvoice } from "@/server/quickbooks/sync";
-import { getMsaSettings } from "@/server/actions/settings";
+import { getMsaSettings, getBillingSettings } from "@/server/actions/settings";
 import { notifyQuoteCreator, appUrl } from "@/server/notify";
 import { revalidatePath } from "next/cache";
 
@@ -81,6 +81,15 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
 
     // 2. Resolve (or create) a QuickBooks Item for every line, caching the
     //    result back onto the catalog Product so future quotes reuse it.
+    //    When the client chose to pay ANNUALLY (Settings → Billing options),
+    //    each RECURRING_MONTHLY line's unit price is annualized (×12, less
+    //    the annual discount) so this one invoice covers the full year up
+    //    front instead of just the first month — ONE_TIME/HOURLY lines are
+    //    unaffected either way.
+    const billingSettings = await getBillingSettings();
+    const isAnnual = quote.billingFrequency === "ANNUAL";
+    const annualMultiplier = isAnnual ? 12 * (1 - billingSettings.annualDiscountPct / 100) : 1;
+
     const resolvedLines = [];
     for (const item of lineItems) {
       let qboItemId: string | null = null;
@@ -94,22 +103,25 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
       } else {
         qboItemId = await findOrCreateQboItem(item.name);
       }
+      const isRecurring = item.billingType === "RECURRING_MONTHLY";
       resolvedLines.push({
         itemId: qboItemId,
-        description: `${item.name} (${item.unitLabel})`,
+        description: `${item.name} (${item.unitLabel})${isRecurring && isAnnual ? " — Annual (12 months)" : ""}`,
         quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
+        unitPrice: isRecurring ? Number(item.unitPrice) * annualMultiplier : Number(item.unitPrice),
       });
     }
 
-    // 3. Create the invoice. This invoices everything currently on the quote
-    //    (one-time fees + first month of recurring services) — standard MSP
-    //    practice is to bill recurring managed services in ADVANCE (for the
-    //    coming period, not the one just finished), with one-time/onboarding
-    //    fees also due at signing, which is exactly what a single "first
-    //    invoice" covering both does. Ongoing monthly billing beyond this
-    //    first invoice needs a recurring mechanism — see the deployment
-    //    guide for options.
+    // 3. Create the invoice. For MONTHLY billing this invoices everything
+    //    currently on the quote (one-time fees + first month of recurring
+    //    services) — standard MSP practice is to bill recurring managed
+    //    services in ADVANCE (for the coming period, not the one just
+    //    finished), with one-time/onboarding fees also due at signing. For
+    //    ANNUAL billing the recurring lines above already cover the full
+    //    12-month prepayment, so this same "one invoice" also fully covers
+    //    the year. Ongoing billing beyond what this invoice covers (monthly
+    //    renewals, or next year's annual renewal) needs a recurring
+    //    mechanism — see the deployment guide for options.
     const msaSettings = await getMsaSettings();
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + msaSettings.paymentDueDays);
@@ -118,7 +130,7 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
       customerId: qboCustomerId,
       lines: resolvedLines,
       dueDate: dueDate.toISOString().slice(0, 10),
-      privateNote: `MSP CRM quote #${quote.quoteNumber} — first invoice after signed MSA.`,
+      privateNote: `MSP CRM quote #${quote.quoteNumber} — first invoice after signed MSA${isAnnual ? " (annual prepayment)" : ""}.`,
     });
 
     await db
@@ -143,7 +155,7 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
       quoteId,
       `First invoice created in QuickBooks — quote #${quote.quoteNumber}`,
       `<p>The first invoice for quote #${quote.quoteNumber}${quote.title ? ` — "${quote.title}"` : ""} (${customer.name}) was created in QuickBooks${invoice.DocNumber ? ` as invoice ${invoice.DocNumber}` : ""}.</p>
-<p><a href="${appUrl()}/quotes/${quoteId}">Open the quote</a></p>`
+<p><a href="${await appUrl()}/quotes/${quoteId}">Open the quote</a></p>`
     );
 
     revalidatePath(`/quotes/${quoteId}`);

@@ -11,11 +11,13 @@ import {
   DEFAULT_CHECKLIST_TEMPLATE,
   DEFAULT_M365_PLANS,
   DEFAULT_MSA_SETTINGS,
+  DEFAULT_BILLING_SETTINGS,
   type RateCard,
   type ScopeMatrixRow,
   type ChecklistTemplateItem,
   type M365Plan,
   type MsaSettings,
+  type BillingSettings,
 } from "@/server/pricing-data";
 
 const RATE_CARD_KEY = "pricingRateCard";
@@ -23,6 +25,7 @@ const SCOPE_MATRIX_KEY = "scopeMatrix";
 const CHECKLIST_TEMPLATE_KEY = "checklistTemplate";
 const M365_PLANS_KEY = "m365Plans";
 const MSA_SETTINGS_KEY = "msaSettings";
+const BILLING_SETTINGS_KEY = "billingSettings";
 
 async function requireUser() {
   const session = await auth();
@@ -150,6 +153,28 @@ export async function getMsaSettingsPublic(): Promise<MsaSettings> {
 export async function updateMsaSettings(settings: MsaSettings) {
   await requireAdmin();
   await setSetting(MSA_SETTINGS_KEY, settings);
+  revalidatePath("/settings");
+  revalidatePath("/quotes");
+}
+
+// ---- Billing options (monthly vs. annual-prepay discount) ----
+
+export async function getBillingSettings(): Promise<BillingSettings> {
+  await requireUser();
+  const stored = await getSetting(BILLING_SETTINGS_KEY, DEFAULT_BILLING_SETTINGS);
+  return { ...DEFAULT_BILLING_SETTINGS, ...stored };
+}
+
+// No-auth read — the public quote page needs this to show the annual price
+// option before the visitor logs into anything (they never do).
+export async function getBillingSettingsPublic(): Promise<BillingSettings> {
+  const stored = await getSetting(BILLING_SETTINGS_KEY, DEFAULT_BILLING_SETTINGS);
+  return { ...DEFAULT_BILLING_SETTINGS, ...stored };
+}
+
+export async function updateBillingSettings(settings: BillingSettings) {
+  await requireAdmin();
+  await setSetting(BILLING_SETTINGS_KEY, settings);
   revalidatePath("/settings");
   revalidatePath("/quotes");
 }

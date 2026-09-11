@@ -750,3 +750,22 @@ export const DEFAULT_CHECKLIST_TEMPLATE: ChecklistTemplateItem[] = [
   { key: "contract", category: "Contract", question: "Term, price increases, payment terms, termination, and limitation language in MSA/SOW?", whyItMatters: "Commercial risk belongs in signed documents." },
   { key: "assumptions", category: "Assumptions", question: "All proposal assumptions and exclusions are written into SOW?", whyItMatters: "Prevents scope disputes later." },
 ];
+
+// ---------------------------------------------------------------------------
+// Billing options (Settings → Billing options) — global knobs for the
+// monthly-vs-annual-prepay choice offered on a quote. Deliberately separate
+// from RateCard (which prices services) and MsaSettings (legal terms): this
+// is purely a payment-schedule incentive layered on top of whatever the
+// quote's recurring monthly total already is.
+// ---------------------------------------------------------------------------
+
+export type BillingSettings = {
+  // % discount off the annualized recurring total (totalMonthly * 12) when
+  // the client chooses to prepay annually instead of paying monthly. 0 = no
+  // discount offered — annual just becomes "pay 12 months at once."
+  annualDiscountPct: number;
+};
+
+export const DEFAULT_BILLING_SETTINGS: BillingSettings = {
+  annualDiscountPct: 10,
+};

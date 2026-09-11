@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getMsaByToken } from "@/server/actions/msa";
 import { renderMsaSections, type MsaContent } from "@/server/msa";
 import { MsaSignPanel } from "./msa-sign-panel";
+import { AccountContactCard } from "@/components/account-contact-card";
 
 export default async function MsaSigningPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -32,6 +33,18 @@ export default async function MsaSigningPage({ params }: { params: Promise<{ tok
             This document was generated from the referenced quote and this provider&rsquo;s standard terms. It is a
             template provided for convenience and is not a substitute for independent legal advice.
           </div>
+
+          {content.accountContact && (
+            <div className="mb-6">
+              <AccountContactCard
+                name={content.accountContact.name}
+                title={content.accountContact.title}
+                email={content.accountContact.email}
+                phone={content.accountContact.phone}
+                photoUrl={content.accountContact.photoUrl}
+              />
+            </div>
+          )}
 
           <div className="flex flex-col gap-6 text-sm text-slate-700">
             {sections.map((section) => (

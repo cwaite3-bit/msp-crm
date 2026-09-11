@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { getQuickBooksStatus } from "@/server/actions/quickbooks";
 import { listUsers } from "@/server/actions/users";
-import { getRateCard, getScopeMatrix, getM365Plans, getMsaSettings } from "@/server/actions/settings";
+import { getRateCard, getScopeMatrix, getM365Plans, getMsaSettings, getBillingSettings } from "@/server/actions/settings";
 import { listSlas } from "@/server/actions/slas";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { ScopeMatrixPanel } from "./scope-matrix-panel";
 import { M365PricingPanel } from "./m365-pricing-panel";
 import { SlaPanel } from "./sla-panel";
 import { MsaSettingsPanel } from "./msa-settings-panel";
+import { BillingSettingsPanel } from "./billing-settings-panel";
 import { TestEmailButton } from "./test-email-button";
 import { IntakeLinkCard } from "./intake-link-card";
 import { appUrl } from "@/server/notify";
@@ -34,6 +35,8 @@ export default async function SettingsPage({
   const m365Plans = await getM365Plans();
   const slaList = isAdmin ? await listSlas() : [];
   const msaSettings = isAdmin ? await getMsaSettings() : null;
+  const billingSettings = isAdmin ? await getBillingSettings() : null;
+  const intakeUrl = `${await appUrl()}/new-customer`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,7 +109,7 @@ export default async function SettingsPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <IntakeLinkCard url={`${appUrl()}/new-customer`} />
+          <IntakeLinkCard url={intakeUrl} />
         </CardContent>
       </Card>
 
@@ -175,6 +178,21 @@ export default async function SettingsPage({
           </CardHeader>
           <CardContent>
             <SlaPanel slas={slaList} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && billingSettings && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Billing options</CardTitle>
+            <CardDescription>
+              Lets a client choose to pay annually upfront at a discount instead of monthly, for the same plan and
+              services.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BillingSettingsPanel settings={billingSettings} />
           </CardContent>
         </Card>
       )}

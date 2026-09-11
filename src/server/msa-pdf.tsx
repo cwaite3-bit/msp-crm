@@ -39,7 +39,38 @@ const styles = StyleSheet.create({
   tableCell: { flex: 1, fontSize: 8.5, paddingRight: 4 },
   tableCellHeader: { flex: 1, fontSize: 8.5, fontWeight: 700, paddingRight: 4, color: BRAND_NAVY },
   signatureBlock: { marginTop: 24, borderTopWidth: 1, borderTopColor: BRAND_BLUE, paddingTop: 12 },
+  signatureColumns: { flexDirection: "row" },
+  signatureColumn: { flex: 1, marginRight: 24 },
+  signatureColumnLabel: { fontSize: 9, fontWeight: 700, color: BRAND_NAVY, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
+  signatureRow: { marginBottom: 9 },
+  signatureRowLabel: { fontSize: 7.5, color: BRAND_GRAY, marginBottom: 1 },
+  signatureRowValue: { fontSize: 9.5, borderBottomWidth: 0.75, borderBottomColor: "#94a3b8", paddingBottom: 3, minHeight: 14 },
   footer: { position: "absolute", bottom: 24, left: 48, right: 48, fontSize: 7.5, color: BRAND_GRAY, textAlign: "center" },
+  contactBlock: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#eaf4fd",
+    borderLeftWidth: 3,
+    borderLeftColor: BRAND_BLUE,
+    padding: 8,
+    marginBottom: 16,
+  },
+  contactPhoto: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
+  contactInitials: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+    backgroundColor: BRAND_NAVY,
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: 700,
+    textAlign: "center",
+    paddingTop: 9,
+  },
+  contactLabel: { fontSize: 7, fontWeight: 700, color: BRAND_NAVY, textTransform: "uppercase", letterSpacing: 0.5 },
+  contactName: { fontSize: 9.5, fontWeight: 700, color: "#0f172a" },
+  contactDetail: { fontSize: 8, color: BRAND_GRAY },
 });
 
 function MsaDocument({
@@ -63,6 +94,34 @@ function MsaDocument({
           convenience only and is NOT a substitute for review by an attorney licensed in your jurisdiction before it is
           relied upon as a binding agreement.
         </Text>
+
+        {content.accountContact && (
+          <View style={styles.contactBlock}>
+            {content.accountContact.photoUrl ? (
+              <Image src={content.accountContact.photoUrl} style={styles.contactPhoto} />
+            ) : (
+              <Text style={styles.contactInitials}>
+                {content.accountContact.name
+                  .split(/\s+/)
+                  .map((p) => p[0])
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase() || "?"}
+              </Text>
+            )}
+            <View>
+              <Text style={styles.contactLabel}>Your point of contact</Text>
+              <Text style={styles.contactName}>
+                {content.accountContact.name}
+                {content.accountContact.title ? ` — ${content.accountContact.title}` : ""}
+              </Text>
+              <Text style={styles.contactDetail}>
+                {[content.accountContact.email, content.accountContact.phone].filter(Boolean).join("   ·   ")}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {sections.map((section) => (
           <View key={section.heading}>
@@ -96,24 +155,50 @@ function MsaDocument({
         ))}
 
         <View style={styles.signatureBlock}>
-          <Text style={{ marginBottom: 24 }}>
-            Provider: {content.msaSettings.providerLegalName || "____________________________"} By:
-            ____________________________ Name: {content.msaSettings.providerSignerName || "____________________________"} Title:{" "}
-            {content.msaSettings.providerSignerTitle || "____________________________"} Date: ____________
-          </Text>
-          {signature ? (
-            <Text>
-              Client: {content.customerName} By (typed signature): {signature.signedByName}
-              {signature.signedByTitle ? `, ${signature.signedByTitle}` : ""} Date:{" "}
-              {new Date(signature.signedAt).toLocaleString()}
-              {signature.signedIp ? ` (submitted from IP ${signature.signedIp})` : ""}
-            </Text>
-          ) : (
-            <Text>
-              Client: {content.customerName} By: ____________________________ Name: ____________________________ Title:
-              ____________________________ Date: ____________
-            </Text>
-          )}
+          <View style={styles.signatureColumns}>
+            <View style={styles.signatureColumn}>
+              <Text style={styles.signatureColumnLabel}>Provider — {content.msaSettings.providerLegalName || "[Provider legal name]"}</Text>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Signature</Text>
+                <Text style={styles.signatureRowValue}> </Text>
+              </View>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Name</Text>
+                <Text style={styles.signatureRowValue}>{content.msaSettings.providerSignerName || " "}</Text>
+              </View>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Title</Text>
+                <Text style={styles.signatureRowValue}>{content.msaSettings.providerSignerTitle || " "}</Text>
+              </View>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Date</Text>
+                <Text style={styles.signatureRowValue}> </Text>
+              </View>
+            </View>
+
+            <View style={styles.signatureColumn}>
+              <Text style={styles.signatureColumnLabel}>Client — {content.customerName}</Text>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Signature{signature ? " (typed)" : ""}</Text>
+                <Text style={styles.signatureRowValue}>{signature ? signature.signedByName : " "}</Text>
+              </View>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Name</Text>
+                <Text style={styles.signatureRowValue}>{signature ? signature.signedByName : " "}</Text>
+              </View>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Title</Text>
+                <Text style={styles.signatureRowValue}>{signature?.signedByTitle || " "}</Text>
+              </View>
+              <View style={styles.signatureRow}>
+                <Text style={styles.signatureRowLabel}>Date</Text>
+                <Text style={styles.signatureRowValue}>{signature ? new Date(signature.signedAt).toLocaleString() : " "}</Text>
+              </View>
+              {signature?.signedIp && (
+                <Text style={{ fontSize: 7, color: BRAND_GRAY }}>Submitted from IP {signature.signedIp}</Text>
+              )}
+            </View>
+          </View>
         </View>
 
         <Text style={styles.footer}>
