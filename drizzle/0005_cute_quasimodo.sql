@@ -1,0 +1,1 @@
+ALTER TABLE "msa_documents" ADD COLUMN "signature_image_url" text;

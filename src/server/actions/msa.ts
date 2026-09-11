@@ -161,34 +161,57 @@ export async function markMsaSent(docId: string) {
   }
 }
 
-export async function signMsaPublic(token: string, signedByName: string, signedByTitle: string) {
-  const [doc] = await db.select().from(msaDocuments).where(eq(msaDocuments.signingToken, token)).limit(1);
-  if (!doc) throw new Error("Agreement not found");
-  if (doc.status === "SIGNED") return;
+// signatureImageDataUri is a PNG data: URI captured from the canvas
+// signature pad on the public signing page (msa-sign-panel.tsx) — same
+// "store the data: URI directly on the row" pattern as staff photos, since
+// there's no durable file storage on Vercel's serverless filesystem.
+// Returned as a result object (rather than thrown) because this runs from
+// an unauthenticated public page and a thrown Server Action error gets
+// redacted to an opaque digest in production — the client needs to be able
+// to show *why* signing failed (e.g. a corrupt signature image).
+export async function signMsaPublic(
+  token: string,
+  signedByName: string,
+  signedByTitle: string,
+  signatureImageDataUri?: string | null
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const [doc] = await db.select().from(msaDocuments).where(eq(msaDocuments.signingToken, token)).limit(1);
+    if (!doc) return { ok: false, error: "Agreement not found" };
+    if (doc.status === "SIGNED") return { ok: true };
+    if (!signedByName.trim()) return { ok: false, error: "Name is required" };
+    if (signatureImageDataUri && !signatureImageDataUri.startsWith("data:image/")) {
+      return { ok: false, error: "Invalid signature image" };
+    }
 
-  const hdrs = await headers();
-  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrs.get("x-real-ip") || null;
+    const hdrs = await headers();
+    const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrs.get("x-real-ip") || null;
 
-  await db
-    .update(msaDocuments)
-    .set({
-      status: "SIGNED",
-      signedAt: new Date(),
-      signedByName,
-      signedByTitle: signedByTitle || null,
-      signedIp: ip,
-    })
-    .where(eq(msaDocuments.id, doc.id));
+    await db
+      .update(msaDocuments)
+      .set({
+        status: "SIGNED",
+        signedAt: new Date(),
+        signedByName,
+        signedByTitle: signedByTitle || null,
+        signedIp: ip,
+        signatureImageUrl: signatureImageDataUri || null,
+      })
+      .where(eq(msaDocuments.id, doc.id));
 
-  const content = doc.content as MsaContent;
-  await notifyQuoteCreator(
-    doc.quoteId,
-    `MSA signed — quote #${content.quoteNumber}`,
-    `<p><strong>${signedByName}</strong>${signedByTitle ? ` (${signedByTitle})` : ""} just signed the Master Service Agreement for quote #${content.quoteNumber} — ${content.customerName}. You can now send the first invoice to QuickBooks.</p>
+    const content = doc.content as MsaContent;
+    await notifyQuoteCreator(
+      doc.quoteId,
+      `MSA signed — quote #${content.quoteNumber}`,
+      `<p><strong>${signedByName}</strong>${signedByTitle ? ` (${signedByTitle})` : ""} just signed the Master Service Agreement for quote #${content.quoteNumber} — ${content.customerName}. You can now send the first invoice to QuickBooks.</p>
 <p><a href="${await appUrl()}/quotes/${doc.quoteId}">Open the quote</a></p>`
-  );
+    );
 
-  revalidatePath(`/quotes/${doc.quoteId}`);
+    revalidatePath(`/quotes/${doc.quoteId}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not submit signature" };
+  }
 }
 
 // Generates the PDF for a given MSA document — signed layout if the
@@ -201,7 +224,13 @@ export async function renderMsaDocumentPdf(docId: string): Promise<Buffer> {
   const content = doc.content as MsaContent;
   const signature =
     doc.status === "SIGNED" && doc.signedAt
-      ? { signedByName: doc.signedByName || "", signedByTitle: doc.signedByTitle, signedAt: doc.signedAt.toISOString(), signedIp: doc.signedIp }
+      ? {
+          signedByName: doc.signedByName || "",
+          signedByTitle: doc.signedByTitle,
+          signedAt: doc.signedAt.toISOString(),
+          signedIp: doc.signedIp,
+          signatureImageUrl: doc.signatureImageUrl,
+        }
       : null;
   return renderMsaPdf(content, signature);
 }

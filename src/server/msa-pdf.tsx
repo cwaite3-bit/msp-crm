@@ -71,6 +71,14 @@ const styles = StyleSheet.create({
   contactLabel: { fontSize: 7, fontWeight: 700, color: BRAND_NAVY, textTransform: "uppercase", letterSpacing: 0.5 },
   contactName: { fontSize: 9.5, fontWeight: 700, color: "#0f172a" },
   contactDetail: { fontSize: 8, color: BRAND_GRAY },
+  signatureImageWrap: {
+    borderBottomWidth: 0.75,
+    borderBottomColor: "#94a3b8",
+    paddingBottom: 3,
+    minHeight: 14,
+    justifyContent: "flex-end",
+  },
+  signatureImage: { height: 26, width: 110, objectFit: "contain" },
 });
 
 function MsaDocument({
@@ -78,7 +86,13 @@ function MsaDocument({
   signature,
 }: {
   content: MsaContent;
-  signature?: { signedByName: string; signedByTitle: string | null; signedAt: string; signedIp: string | null } | null;
+  signature?: {
+    signedByName: string;
+    signedByTitle: string | null;
+    signedAt: string;
+    signedIp: string | null;
+    signatureImageUrl?: string | null;
+  } | null;
 }) {
   const sections = renderMsaSections(content);
   return (
@@ -173,8 +187,16 @@ function MsaDocument({
             <View style={styles.signatureColumn}>
               <Text style={styles.signatureColumnLabel}>Client — {content.customerName}</Text>
               <View style={styles.signatureRow}>
-                <Text style={styles.signatureRowLabel}>Signature{signature ? " (typed)" : ""}</Text>
-                <Text style={styles.signatureRowValue}>{signature ? signature.signedByName : " "}</Text>
+                <Text style={styles.signatureRowLabel}>
+                  Signature{signature ? (signature.signatureImageUrl ? " (drawn)" : " (typed)") : ""}
+                </Text>
+                {signature?.signatureImageUrl ? (
+                  <View style={styles.signatureImageWrap}>
+                    <Image src={signature.signatureImageUrl} style={styles.signatureImage} />
+                  </View>
+                ) : (
+                  <Text style={styles.signatureRowValue}>{signature ? signature.signedByName : " "}</Text>
+                )}
               </View>
               <View style={styles.signatureRow}>
                 <Text style={styles.signatureRowLabel}>Name</Text>
@@ -197,7 +219,7 @@ function MsaDocument({
 
         <Text style={styles.footer}>
           {signature
-            ? "Signed electronically via typed name — not a certified/notarized digital signature. Retain for your records."
+            ? `Signed electronically via ${signature.signatureImageUrl ? "a drawn signature" : "a typed name"}, with the signer's IP address logged — not a certified/notarized digital signature. Retain for your records.`
             : "Unsigned template — upload to Adobe Acrobat Sign, DocuSign, or your e-signature provider of choice to route for signature, or use this system's own signing link."}
         </Text>
       </Page>

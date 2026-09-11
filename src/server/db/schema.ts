@@ -478,6 +478,11 @@ export const msaDocuments = pgTable(
     signedByName: text("signed_by_name"),
     signedByTitle: text("signed_by_title"),
     signedIp: text("signed_ip"),
+    // Data: URI PNG of the hand-drawn signature captured on the public
+    // signing page (see msa-sign-panel.tsx's canvas pad) — same
+    // store-directly-on-the-row pattern as users.photoUrl, since there's
+    // no durable file storage on Vercel's serverless filesystem.
+    signatureImageUrl: text("signature_image_url"),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
