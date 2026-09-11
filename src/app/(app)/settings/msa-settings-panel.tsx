@@ -89,12 +89,6 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-        These terms populate a generated Master Service Agreement template. This is a starting point, not legal
-        advice — have an attorney licensed in your state review and customize the liability, indemnification, and
-        termination language before relying on it with a real customer.
-      </div>
-
       <div>
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Your business identity</p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -89,12 +89,6 @@ function MsaDocument({
         <Text style={styles.subtitle}>
           Quote #{content.quoteNumber} · {content.customerName} · Generated {new Date(content.generatedAt).toLocaleDateString()}
         </Text>
-        <Text style={styles.banner}>
-          This document is a template generated from the attached quote and standing agreement terms. It is provided for
-          convenience only and is NOT a substitute for review by an attorney licensed in your jurisdiction before it is
-          relied upon as a binding agreement.
-        </Text>
-
         {content.accountContact && (
           <View style={styles.contactBlock}>
             {content.accountContact.photoUrl ? (

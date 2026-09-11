@@ -61,14 +61,21 @@ export function NavShell({
         />
       )}
 
+      {/* Always fixed to the viewport (not just on mobile) so the user
+          info / Sign out block at the bottom stays visible without
+          scrolling, even on pages with a lot of content — previously this
+          was `lg:static`, which let the sidebar stretch to the full page
+          height and pushed Sign out off-screen below the fold. The nav
+          links scroll independently (overflow-y-auto) if that list ever
+          outgrows the viewport, while the bottom block stays pinned. */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-in-out",
-          "lg:static lg:z-auto lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-in-out",
+          "lg:translate-x-0",
           mobileNavOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex h-20 items-center border-b border-slate-200 px-5">
+        <div className="flex h-20 shrink-0 items-center border-b border-slate-200 px-5">
           <Image
             src="/lockdown-logo.png"
             alt="Lockdown IT"
@@ -78,7 +85,7 @@ export function NavShell({
             priority
           />
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
           {NAV.map((item) => {
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             const Icon = item.icon;
@@ -97,7 +104,7 @@ export function NavShell({
             );
           })}
         </nav>
-        <div className="border-t border-slate-200 p-3">
+        <div className="shrink-0 border-t border-slate-200 p-3">
           <div className="mb-2 px-2 text-xs text-slate-500">
             <div className="font-medium text-slate-700">{userName}</div>
             <div>{userRole === "ADMIN" ? "Administrator" : "Staff"}</div>
@@ -109,7 +116,7 @@ export function NavShell({
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto pt-14 lg:pt-0">
+      <main className="flex-1 overflow-y-auto pt-14 lg:pt-0 lg:pl-60">
         <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">{children}</div>
       </main>
     </div>
