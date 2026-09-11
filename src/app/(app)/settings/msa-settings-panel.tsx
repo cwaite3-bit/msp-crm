@@ -9,7 +9,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { updateMsaSettings } from "@/server/actions/settings";
 import { HelpTip } from "@/components/help-tip";
 import { toast } from "sonner";
-import type { MsaSettings, LiabilityCapType } from "@/server/pricing-data";
+import { Plus, Trash2 } from "lucide-react";
+import type { MsaSettings, LiabilityCapType, EscalationLevel, RaciRow } from "@/server/pricing-data";
 
 function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
   return (
@@ -19,6 +20,52 @@ function Field({ label, help, children }: { label: string; help?: string; childr
         {help && <HelpTip text={help} />}
       </span>
       {children}
+    </div>
+  );
+}
+
+// A short list of rows (escalation levels, RACI areas) with inline text
+// inputs, an "add row" button, and a per-row remove button — used for both
+// list-shaped MSA settings below rather than writing two near-identical
+// editors.
+function RowListEditor<T extends Record<string, string>>({
+  rows,
+  onChange,
+  columns,
+  addLabel,
+  emptyRow,
+}: {
+  rows: T[];
+  onChange: (rows: T[]) => void;
+  columns: { key: keyof T; placeholder: string; className?: string }[];
+  addLabel: string;
+  emptyRow: T;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((row, i) => (
+        <div key={i} className="flex items-center gap-2">
+          {columns.map((col) => (
+            <Input
+              key={String(col.key)}
+              className={col.className ?? "flex-1"}
+              value={row[col.key]}
+              placeholder={col.placeholder}
+              onChange={(e) => {
+                const next = rows.slice();
+                next[i] = { ...next[i], [col.key]: e.target.value };
+                onChange(next);
+              }}
+            />
+          ))}
+          <Button variant="ghost" size="icon" onClick={() => onChange(rows.filter((_, ri) => ri !== i))} title="Remove row">
+            <Trash2 className="h-4 w-4 text-slate-400" />
+          </Button>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" className="w-fit" onClick={() => onChange([...rows, emptyRow])}>
+        <Plus className="h-4 w-4" /> {addLabel}
+      </Button>
     </div>
   );
 }
@@ -202,6 +249,111 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
           </Field>
           <Field label="Dispute resolution">
             <Textarea rows={2} value={form.disputeResolutionSummary} onChange={(e) => set("disputeResolutionSummary", e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          Escalation & support contacts
+          <HelpTip text="Who a client should contact, and in what order, if a ticket isn't moving. Rendered as a table in the MSA." />
+        </p>
+        <RowListEditor<EscalationLevel>
+          rows={form.escalationLevels}
+          onChange={(rows) => set("escalationLevels", rows)}
+          addLabel="Add escalation level"
+          emptyRow={{ label: "", contact: "" }}
+          columns={[
+            { key: "label", placeholder: "e.g. Tier 1 — Help Desk" },
+            { key: "contact", placeholder: "Email, phone, or role" },
+          ]}
+        />
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          Roles & responsibilities
+          <HelpTip text="A short RACI-style table of who's responsible for what — monitoring vs. approvals, backups, purchasing, physical security, etc." />
+        </p>
+        <RowListEditor<RaciRow>
+          rows={form.raciRows}
+          onChange={(rows) => set("raciRows", rows)}
+          addLabel="Add row"
+          emptyRow={{ area: "", providerRole: "", clientRole: "" }}
+          columns={[
+            { key: "area", placeholder: "Area of work", className: "flex-[2]" },
+            { key: "providerRole", placeholder: "Provider's role" },
+            { key: "clientRole", placeholder: "Client's role" },
+          ]}
+        />
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Reporting</p>
+        <Field label="What Provider reports, and how often">
+          <Textarea rows={2} value={form.reportsCadenceSummary} onChange={(e) => set("reportsCadenceSummary", e.target.value)} />
+        </Field>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Change requests & true-up</p>
+        <div className="flex flex-col gap-3">
+          <Field label="Change-request process">
+            <Textarea rows={2} value={form.changeRequestSummary} onChange={(e) => set("changeRequestSummary", e.target.value)} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label="True-up frequency">
+              <Input value={form.trueUpFrequency} onChange={(e) => set("trueUpFrequency", e.target.value)} placeholder="quarterly" />
+            </Field>
+            <Field label="Count variance that triggers it (%)">
+              <Input type="number" min={0} value={form.trueUpThresholdPct} onChange={(e) => set("trueUpThresholdPct", Math.max(0, Number(e.target.value) || 0))} />
+            </Field>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Scope</p>
+        <div className="flex flex-col gap-3">
+          <Field label="Included in the recurring fee">
+            <Textarea rows={2} value={form.scopeIncludedSummary} onChange={(e) => set("scopeIncludedSummary", e.target.value)} />
+          </Field>
+          <Field label="Excluded unless separately quoted">
+            <Textarea rows={2} value={form.scopeExcludedSummary} onChange={(e) => set("scopeExcludedSummary", e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Expiration & non-renewal</p>
+        <div className="flex flex-col gap-3">
+          <Field label="Policy">
+            <Textarea rows={2} value={form.expirationPolicySummary} onChange={(e) => set("expirationPolicySummary", e.target.value)} />
+          </Field>
+          <Field label="Month-to-month uplift if not renewed (%)" help="0 = no stated uplift, just continue or suspend.">
+            <Input type="number" min={0} className="max-w-[10rem]" value={form.nonRenewalUpliftPct} onChange={(e) => set("nonRenewalUpliftPct", Math.max(0, Number(e.target.value) || 0))} />
+          </Field>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Force majeure, disputes & notice</p>
+        <div className="flex flex-col gap-3">
+          <Field label="Force majeure">
+            <Textarea rows={2} value={form.forceMajeureSummary} onChange={(e) => set("forceMajeureSummary", e.target.value)} />
+          </Field>
+          <Field label="Require binding arbitration instead of court?" help="Off = disputes go to court per the governing-law state above. On = adds an arbitration clause (AAA rules) as the dispute forum.">
+            <label className="flex h-9 items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={form.requiresArbitration} onChange={(e) => set("requiresArbitration", e.target.checked)} /> Yes
+            </label>
+          </Field>
+          {form.requiresArbitration && (
+            <Field label="Arbitration clause text">
+              <Textarea rows={2} value={form.arbitrationSummary} onChange={(e) => set("arbitrationSummary", e.target.value)} />
+            </Field>
+          )}
+          <Field label="Notice provision">
+            <Textarea rows={2} value={form.noticeProvisionSummary} onChange={(e) => set("noticeProvisionSummary", e.target.value)} />
           </Field>
         </div>
       </div>

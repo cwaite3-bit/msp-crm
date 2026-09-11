@@ -64,12 +64,12 @@ export function QuoteActions({ quote, msaSigned }: { quote: Quote; msaSigned: bo
     )
       return;
     startTransition(async () => {
-      try {
-        await resetQuote(quote.id);
+      const result = await resetQuote(quote.id);
+      if (result.ok) {
         router.refresh();
         toast.success("Quote reset — start fresh from Discovery");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not reset this quote");
+      } else {
+        toast.error(result.error || "Could not reset this quote");
       }
     });
   }

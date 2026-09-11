@@ -19,12 +19,12 @@ export default async function MsaSigningPage({ params }: { params: Promise<{ tok
           <Image src="/lockdown-logo.png" alt="Lockdown IT" width={5052} height={1264} className="h-10 w-auto" priority />
         </div>
 
-        <div className="bg-slate-900 px-8 py-8 text-white">
-          <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">Master Service Agreement</p>
+        <div className="bg-[#024996] px-8 py-8 text-white">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#7cc4f2]">Master Service Agreement</p>
           <h1 className="mt-1 text-2xl font-semibold">
             {content.customerName} · Quote #{content.quoteNumber}
           </h1>
-          <p className="mt-1 text-sm text-slate-300">Generated {new Date(content.generatedAt).toLocaleDateString()}</p>
+          <p className="mt-1 text-sm text-[#bcdcf7]">Generated {new Date(content.generatedAt).toLocaleDateString()}</p>
         </div>
 
         <div className="px-8 py-8">
@@ -36,7 +36,7 @@ export default async function MsaSigningPage({ params }: { params: Promise<{ tok
           <div className="flex flex-col gap-6 text-sm text-slate-700">
             {sections.map((section) => (
               <div key={section.heading}>
-                <h2 className="mb-1.5 text-sm font-semibold text-slate-900">{section.heading}</h2>
+                <h2 className="mb-1.5 text-sm font-semibold text-[#024996]">{section.heading}</h2>
                 {section.paragraphs.map((p, i) => (
                   <p key={i} className="mb-1.5 leading-relaxed">
                     {p}
@@ -46,9 +46,9 @@ export default async function MsaSigningPage({ params }: { params: Promise<{ tok
                   <div className="mt-2 overflow-x-auto">
                     <table className="w-full border-collapse text-xs">
                       <thead>
-                        <tr className="border-b border-slate-300 text-left">
+                        <tr className="border-b-2 border-[#1d98eb] text-left">
                           {section.table.headers.map((h) => (
-                            <th key={h} className="py-1.5 pr-3 font-semibold text-slate-600">
+                            <th key={h} className="py-1.5 pr-3 font-semibold text-[#024996]">
                               {h}
                             </th>
                           ))}

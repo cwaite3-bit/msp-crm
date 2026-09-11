@@ -5,29 +5,41 @@
 // with a signature block appended, the record of an in-house typed-name
 // signature.
 import React from "react";
-import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, Text, View, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import type { MsaContent } from "./msa";
 import { renderMsaSections } from "./msa";
+import { LOCKDOWN_LOGO_DATA_URI } from "./msa-pdf-assets";
+
+// Brand palette sampled directly from public/lockdown-logo.png (navy +
+// bright blue), used here instead of the generic slate/amber this PDF used
+// before, so the downloadable MSA actually looks like it came from this
+// business.
+const BRAND_NAVY = "#024996";
+const BRAND_BLUE = "#1d98eb";
+const BRAND_GRAY = "#64748b";
 
 const styles = StyleSheet.create({
-  page: { padding: 48, fontSize: 10, fontFamily: "Helvetica", color: "#1e293b" },
-  title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
-  subtitle: { fontSize: 10, color: "#64748b", marginBottom: 16 },
+  page: { padding: 48, paddingTop: 32, fontSize: 10, fontFamily: "Helvetica", color: "#1e293b" },
+  logo: { width: 160, marginBottom: 16 },
+  title: { fontSize: 16, fontWeight: 700, marginBottom: 2, color: BRAND_NAVY },
+  subtitle: { fontSize: 10, color: BRAND_GRAY, marginBottom: 16 },
   banner: {
-    backgroundColor: "#fef3c7",
+    backgroundColor: "#eaf4fd",
+    borderLeftWidth: 3,
+    borderLeftColor: BRAND_BLUE,
     padding: 8,
     marginBottom: 16,
     fontSize: 8.5,
-    color: "#78350f",
+    color: BRAND_NAVY,
   },
-  heading: { fontSize: 11, fontWeight: 700, marginTop: 14, marginBottom: 4 },
+  heading: { fontSize: 11, fontWeight: 700, marginTop: 14, marginBottom: 4, color: BRAND_NAVY },
   paragraph: { marginBottom: 6, lineHeight: 1.4 },
   tableRow: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#cbd5e1", paddingVertical: 4 },
-  tableHeaderRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#1e293b", paddingVertical: 4 },
+  tableHeaderRow: { flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: BRAND_BLUE, paddingVertical: 4 },
   tableCell: { flex: 1, fontSize: 8.5, paddingRight: 4 },
-  tableCellHeader: { flex: 1, fontSize: 8.5, fontWeight: 700, paddingRight: 4 },
-  signatureBlock: { marginTop: 24, borderTopWidth: 1, borderTopColor: "#cbd5e1", paddingTop: 12 },
-  footer: { position: "absolute", bottom: 24, left: 48, right: 48, fontSize: 7.5, color: "#94a3b8", textAlign: "center" },
+  tableCellHeader: { flex: 1, fontSize: 8.5, fontWeight: 700, paddingRight: 4, color: BRAND_NAVY },
+  signatureBlock: { marginTop: 24, borderTopWidth: 1, borderTopColor: BRAND_BLUE, paddingTop: 12 },
+  footer: { position: "absolute", bottom: 24, left: 48, right: 48, fontSize: 7.5, color: BRAND_GRAY, textAlign: "center" },
 });
 
 function MsaDocument({
@@ -41,6 +53,7 @@ function MsaDocument({
   return (
     <Document>
       <Page size="LETTER" style={styles.page}>
+        <Image src={LOCKDOWN_LOGO_DATA_URI} style={styles.logo} />
         <Text style={styles.title}>Master Service Agreement</Text>
         <Text style={styles.subtitle}>
           Quote #{content.quoteNumber} · {content.customerName} · Generated {new Date(content.generatedAt).toLocaleDateString()}

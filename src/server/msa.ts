@@ -190,6 +190,7 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
       s.autoRenew
         ? `Following the Initial Term, this Agreement automatically renews for successive ${s.renewalTermMonths}-month terms unless either party gives written notice of non-renewal at least ${s.nonRenewalNoticeDays} days before the end of the then-current term.`
         : `This Agreement does not automatically renew. Continued service beyond the Initial Term requires a new written agreement between the parties.`,
+      `${s.expirationPolicySummary}${s.nonRenewalUpliftPct > 0 ? ` That uplift is currently set at ${s.nonRenewalUpliftPct}%.` : ""}`,
     ],
   });
 
@@ -199,6 +200,8 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
     paragraphs: [
       "Provider will provide the managed services, licensing, and other items described in Quote #" + content.quoteNumber + ", summarized below. Services not itemized in the quote are outside the scope of this Agreement and, if requested, will be separately scoped and quoted as additional work.",
       ...(tierLine ? [tierLine] : []),
+      `Included: ${s.scopeIncludedSummary}`,
+      `Not included unless separately quoted: ${s.scopeExcludedSummary}`,
     ],
     table:
       content.lineItems.length > 0
@@ -227,6 +230,14 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
     ],
   });
 
+  sections.push({
+    heading: "Change Requests & Periodic True-Up",
+    paragraphs: [
+      s.changeRequestSummary,
+      `On a ${s.trueUpFrequency} basis, Provider and Client will confirm the user and device counts against those in the referenced Quote. If actual counts differ from the quoted counts by more than ${s.trueUpThresholdPct}%, Provider may present a Change Request with adjusted pricing to reflect the difference.`,
+    ],
+  });
+
   if (content.sla) {
     const sla = content.sla;
     sections.push({
@@ -244,12 +255,43 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
     });
   }
 
+  if (s.escalationLevels.length > 0) {
+    sections.push({
+      heading: "Escalation & Support Contacts",
+      paragraphs: [
+        "If an issue isn't moving at the level it was opened, Client may escalate through the following contacts, in order:",
+      ],
+      table: {
+        headers: ["Level", "Contact"],
+        rows: s.escalationLevels.map((lvl) => [lvl.label, lvl.contact || "[set in Settings → MSA terms]"]),
+      },
+    });
+  }
+
+  sections.push({
+    heading: "Reporting",
+    paragraphs: [s.reportsCadenceSummary],
+  });
+
   sections.push({
     heading: "Client Responsibilities",
     paragraphs: [
       "Client will provide Provider with reasonable access to Client's systems, personnel, and information necessary to deliver the services; designate a primary point of contact authorized to make decisions on Client's behalf; maintain appropriate licensing for any third-party software not provided by Provider; and use the services in compliance with applicable law. Delays caused by Client's failure to provide required access or information do not count against any response or resolution target above.",
     ],
   });
+
+  if (s.raciRows.length > 0) {
+    sections.push({
+      heading: "Roles & Responsibilities",
+      paragraphs: [
+        "Provider and Client share responsibility for a well-run engagement. The following summarizes who does what for the areas most worth spelling out in advance:",
+      ],
+      table: {
+        headers: ["Area", "Provider", "Client"],
+        rows: s.raciRows.map((row) => [row.area, row.providerRole, row.clientRole]),
+      },
+    });
+  }
 
   sections.push({
     heading: "Third-Party Products & Services",
@@ -326,14 +368,16 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
 
   sections.push({
     heading: "Force Majeure",
-    paragraphs: [
-      "Neither party is liable for any failure or delay in performance caused by events beyond its reasonable control, including natural disaster, act of government, labor dispute, internet or utility failure, or act of a third-party vendor.",
-    ],
+    paragraphs: [s.forceMajeureSummary],
   });
 
   sections.push({
     heading: "Dispute Resolution & Governing Law",
-    paragraphs: [s.disputeResolutionSummary, `This Agreement is governed by the laws of the State of ${governingState}, without regard to its conflict-of-laws principles.`],
+    paragraphs: [
+      s.disputeResolutionSummary,
+      ...(s.requiresArbitration ? [s.arbitrationSummary] : []),
+      `This Agreement is governed by the laws of the State of ${governingState}, without regard to its conflict-of-laws principles.`,
+    ],
   });
 
   sections.push({
@@ -341,7 +385,9 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
     paragraphs: [
       s.independentContractorSummary,
       s.subcontractorsSummary,
-      "Neither party may assign this Agreement without the other's written consent, except to a successor in a merger, acquisition, or sale of substantially all assets. Neither party will, during the term of this Agreement and for one year after, solicit for hire the other party's employees who were directly involved in performing this Agreement, without that party's written consent. All notices under this Agreement must be in writing and delivered to the addresses above (or a designated contact's email address on file). If any provision of this Agreement is held unenforceable, the remaining provisions remain in full effect. This Agreement, together with the referenced Quote and any Statement(s) of Work, is the entire agreement between the parties regarding its subject matter and supersedes all prior discussions or agreements on that subject. It may only be amended in a writing signed by both parties.",
+      "Neither party may assign this Agreement without the other's written consent, except to a successor in a merger, acquisition, or sale of substantially all assets. Neither party will, during the term of this Agreement and for one year after, solicit for hire the other party's employees who were directly involved in performing this Agreement, without that party's written consent.",
+      s.noticeProvisionSummary,
+      "If any provision of this Agreement is held unenforceable, the remaining provisions remain in full effect. This Agreement, together with the referenced Quote and any Statement(s) of Work, is the entire agreement between the parties regarding its subject matter and supersedes all prior discussions or agreements on that subject. It may only be amended in a writing signed by both parties.",
     ],
   });
 

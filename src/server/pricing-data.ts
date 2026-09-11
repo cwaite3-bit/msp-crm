@@ -521,6 +521,24 @@ export type LiabilityCapType = "FEES_PAID_MULTIPLE" | "FIXED_AMOUNT";
 // side must give — this only controls which side(s) get the right at all.
 export type TerminationDirection = "BOTH" | "PROVIDER_ONLY" | "CLIENT_ONLY";
 
+// A rung on the support escalation ladder (e.g. "Tier 1 — Help Desk"),
+// paired with how a client reaches that rung (an email, a phone number, a
+// named role — whatever Provider actually staffs). Rendered as a table in
+// the MSA's "Escalation & Support Contacts" section.
+export type EscalationLevel = {
+  label: string;
+  contact: string;
+};
+
+// One row of the RACI-style "who does what" table in "Roles &
+// Responsibilities" — a plain-language area of work plus each side's role
+// in it (Responsible / Accountable / Consulted / Informed, or free text).
+export type RaciRow = {
+  area: string;
+  providerRole: string;
+  clientRole: string;
+};
+
 export type MsaSettings = {
   providerLegalName: string;
   providerAddress: string;
@@ -561,6 +579,48 @@ export type MsaSettings = {
   thirdPartyDisclaimerSummary: string; // not liable for third-party vendor/software/ISP failures
   independentContractorSummary: string; // Provider is an independent contractor, not Client's employee/agent/partner
   subcontractorsSummary: string; // Provider may use qualified subcontractors and remains responsible for their work
+
+  // Support escalation ladder shown in the MSA (and, in spirit, on the
+  // client-facing quote/SLA pages) — who to contact and in what order if an
+  // issue isn't moving.
+  escalationLevels: EscalationLevel[];
+
+  // Who does what — a short RACI-style table covering the shared-
+  // responsibility areas most MSP disputes come from (monitoring vs.
+  // approvals, backups, purchasing, physical security, etc.).
+  raciRows: RaciRow[];
+
+  // How often — and what — Provider reports back to Client (vulnerable
+  // systems, active incidents, incident history, etc.).
+  reportsCadenceSummary: string;
+
+  // Change control: how either party requests a change to scope/quantities/
+  // service levels, plus the periodic "true-up" that reconciles quoted vs.
+  // actual counts.
+  changeRequestSummary: string;
+  trueUpFrequency: string; // e.g. "quarterly"
+  trueUpThresholdPct: number; // count variance that triggers a Change Request
+
+  // What's included vs. explicitly excluded from the recurring fee —
+  // separate from the quote's own line items, this is the general standing
+  // policy (e.g. "projects are quoted separately").
+  scopeIncludedSummary: string;
+  scopeExcludedSummary: string;
+
+  // What happens if Client doesn't renew or cancel by the end of the term —
+  // continued month-to-month service at an uplift, or suspension.
+  nonRenewalUpliftPct: number;
+  expirationPolicySummary: string;
+
+  forceMajeureSummary: string;
+
+  // Dispute resolution defaults to negotiation + courts (see
+  // disputeResolutionSummary above); flipping this on adds binding
+  // arbitration as the forum instead of litigation.
+  requiresArbitration: boolean;
+  arbitrationSummary: string;
+
+  noticeProvisionSummary: string;
 };
 
 export const DEFAULT_MSA_SETTINGS: MsaSettings = {
@@ -611,6 +671,50 @@ export const DEFAULT_MSA_SETTINGS: MsaSettings = {
     "Provider is an independent contractor. Nothing in this Agreement creates an employment, agency, joint venture, or partnership relationship between the parties. Provider is solely responsible for its own employees, subcontractors, taxes, benefits, and insurance.",
   subcontractorsSummary:
     "Provider may use qualified subcontractors to perform portions of the services and remains responsible for the performance of the services as a whole.",
+
+  escalationLevels: [
+    { label: "Tier 1 — Help Desk", contact: "" },
+    { label: "Tier 2 — Support Team Lead", contact: "" },
+    { label: "Tier 3 — Service Delivery Manager", contact: "" },
+    { label: "Tier 4 — Director of Managed Services", contact: "" },
+    { label: "Tier 5 — Owner / Executive Sponsor", contact: "" },
+  ],
+
+  raciRows: [
+    { area: "Day-to-day monitoring and alerting", providerRole: "Responsible", clientRole: "Informed" },
+    { area: "Incident detection and initial triage", providerRole: "Responsible", clientRole: "Informed" },
+    { area: "Remediation decisions for business-critical systems", providerRole: "Consulted", clientRole: "Accountable" },
+    { area: "Backup execution and retention (per the Quote)", providerRole: "Responsible", clientRole: "Accountable" },
+    { area: "Hardware, licensing, and purchasing decisions", providerRole: "Consulted", clientRole: "Accountable" },
+    { area: "Physical security of facilities and on-site hardware", providerRole: "Informed", clientRole: "Responsible" },
+  ],
+
+  reportsCadenceSummary:
+    "Provider will share a summary of at-risk/vulnerable systems, currently active incidents, and a log of resolved incidents with Client's designated contact on a monthly basis, with active/urgent issues communicated as they occur rather than held for the monthly summary.",
+
+  changeRequestSummary:
+    "Either party may request a change to the scope, quantities, or service levels described in this Agreement by submitting a written Change Request describing the proposed change and its effect on scope, schedule, and fees. No change takes effect, and Provider has no obligation to perform it, until both parties approve the Change Request in writing.",
+  trueUpFrequency: "quarterly",
+  trueUpThresholdPct: 10,
+
+  scopeIncludedSummary:
+    "Support for the users, devices, and services itemized in the referenced Quote, including remote monitoring and management, help desk support during the coverage hours stated in the attached Service Level Agreement, and management of the systems explicitly identified as in-scope in the Quote or an attached Statement of Work.",
+  scopeExcludedSummary:
+    "Unless separately quoted: new projects or infrastructure changes exceeding the change-request threshold above; hardware or third-party software not procured through Provider; support for systems, applications, or vendors not listed in the Quote; on-site work beyond what the Quote specifies; and recovery from data loss caused by circumstances outside Provider's reasonable control.",
+
+  nonRenewalUpliftPct: 25,
+  expirationPolicySummary:
+    "Service and term dates are established at onboarding of the first user or device under this Agreement. If Client has not renewed or given written notice of cancellation by the end of the then-current term, Provider may, at its discretion, either continue services on a month-to-month basis at recurring fees increased by up to the percentage stated below until the Agreement is formally renewed, or suspend services for any non-renewed users or devices. Client is encouraged to complete renewal at least five (5) days before the term's expiration date to avoid an uplift or interruption in service.",
+
+  forceMajeureSummary:
+    "Neither party is liable for any failure or delay in performance caused by events beyond its reasonable control, including natural disaster, act of government, labor dispute, internet or utility failure, pandemic, or the act of a third-party vendor. The affected party will promptly notify the other party and use reasonable efforts to resume performance.",
+
+  requiresArbitration: false,
+  arbitrationSummary:
+    "Any dispute arising out of or relating to this Agreement that is not resolved through the good-faith negotiation described above will be settled by binding arbitration administered under the rules of the American Arbitration Association, rather than in court, except that either party may seek injunctive relief in court to protect its confidential information or intellectual property.",
+
+  noticeProvisionSummary:
+    "All notices under this Agreement must be in writing and are considered delivered when sent by email to the addresses on file (with confirmation of transmission) during the recipient's normal business hours, on the next business day if sent after hours, or when delivered by a nationally recognized courier or certified mail.",
 };
 
 // ---------------------------------------------------------------------------

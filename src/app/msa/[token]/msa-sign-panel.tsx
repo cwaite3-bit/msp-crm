@@ -29,7 +29,7 @@ export function MsaSignPanel({
 
   if (status === "SIGNED") {
     return (
-      <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-emerald-800">
+      <div className="flex items-center gap-2 rounded-lg bg-[#eaf4fd] px-4 py-3 text-[#024996]">
         <CheckCircle2 className="h-5 w-5" />
         <span className="text-sm font-medium">
           Signed by {signedByName}
@@ -49,18 +49,18 @@ export function MsaSignPanel({
 
   if (mode === "signing") {
     return (
-      <div className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-        <p className="text-sm font-medium text-emerald-900">Type your full name to sign this agreement</p>
+      <div className="flex flex-col gap-3 rounded-lg border border-[#bcdcf7] bg-[#eaf4fd] p-4">
+        <p className="text-sm font-medium text-[#024996]">Type your full name to sign this agreement</p>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" autoFocus />
         <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" />
-        <label className="flex items-start gap-2 text-xs text-emerald-900">
+        <label className="flex items-start gap-2 text-xs text-[#024996]">
           <input type="checkbox" className="mt-0.5" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
           I have read this Master Service Agreement and agree to be bound by its terms on behalf of the client
           named above. I understand this typed signature is a legally binding electronic signature under
           applicable e-signature law, though it is not a certified digital signature product.
         </label>
         <div className="flex gap-2">
-          <Button onClick={sign} disabled={pending || !name.trim() || !agreed}>
+          <Button onClick={sign} disabled={pending || !name.trim() || !agreed} className="bg-[#024996] hover:bg-[#023a78]">
             {pending ? "Submitting…" : "Confirm signature"}
           </Button>
           <Button variant="outline" onClick={() => setMode("idle")} disabled={pending}>
@@ -73,7 +73,7 @@ export function MsaSignPanel({
 
   return (
     <div className="flex flex-wrap gap-3">
-      <Button onClick={() => setMode("signing")} className="bg-emerald-600 hover:bg-emerald-500">
+      <Button onClick={() => setMode("signing")} className="bg-[#1d98eb] hover:bg-[#1683cc]">
         <CheckCircle2 className="h-4 w-4" /> Sign agreement
       </Button>
       <Button variant="ghost" onClick={() => window.print()}>

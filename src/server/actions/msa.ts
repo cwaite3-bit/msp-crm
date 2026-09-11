@@ -100,30 +100,41 @@ export async function getMsaForQuote(quoteId: string) {
 // a quote that's still being negotiated would just get regenerated (and
 // potentially disagree with what a customer already signed) the moment
 // anything on the quote changes.
-export async function generateMsa(quoteId: string) {
-  await requireUser();
-  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
-  if (!quote) throw new Error("Quote not found");
-  if (quote.status !== "ACCEPTED") {
-    throw new Error("Generate the MSA after the customer has accepted this quote — it summarizes what they agreed to.");
-  }
+// Returns a result object rather than throwing. Next.js redacts a thrown
+// Server Action error's message in production builds (replacing it with a
+// generic "Server Components render" digest, shown to the user as
+// "Minified React error #441") — so an expected/validation error like
+// these needs to come back as data for the client to actually see it,
+// matching the {ok, error} pattern already used by pushQuoteToQuickBooks
+// and setQuoteStatus. See the caller in msa-panel.tsx.
+export async function generateMsa(quoteId: string): Promise<{ ok: boolean; error?: string; id?: string }> {
+  try {
+    await requireUser();
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+    if (!quote) return { ok: false, error: "Quote not found" };
+    if (quote.status !== "ACCEPTED") {
+      return { ok: false, error: "Generate the MSA after the customer has accepted this quote — it summarizes what they agreed to." };
+    }
 
-  const existing = await latestMsaDocument(quoteId);
-  if (existing?.status === "SIGNED") {
-    throw new Error("This quote's MSA has already been signed and is locked. Start a new quote if the agreement needs to change.");
-  }
+    const existing = await latestMsaDocument(quoteId);
+    if (existing?.status === "SIGNED") {
+      return { ok: false, error: "This quote's MSA has already been signed and is locked. Start a new quote if the agreement needs to change." };
+    }
 
-  const content = await buildContentForQuote(quoteId);
+    const content = await buildContentForQuote(quoteId);
 
-  if (existing) {
-    await db.update(msaDocuments).set({ content, updatedAt: new Date() }).where(eq(msaDocuments.id, existing.id));
+    if (existing) {
+      await db.update(msaDocuments).set({ content, updatedAt: new Date() }).where(eq(msaDocuments.id, existing.id));
+      revalidatePath(`/quotes/${quoteId}`);
+      return { ok: true, id: existing.id };
+    }
+
+    const [row] = await db.insert(msaDocuments).values({ quoteId, content, status: "DRAFT" }).returning();
     revalidatePath(`/quotes/${quoteId}`);
-    return existing.id;
+    return { ok: true, id: row.id };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not generate the MSA" };
   }
-
-  const [row] = await db.insert(msaDocuments).values({ quoteId, content, status: "DRAFT" }).returning();
-  revalidatePath(`/quotes/${quoteId}`);
-  return row.id;
 }
 
 export async function getMsaByToken(token: string) {
@@ -188,29 +199,38 @@ export async function renderMsaDocumentPdf(docId: string): Promise<Buffer> {
   return renderMsaPdf(content, signature);
 }
 
-export async function sendMsaEmail(docId: string, toEmail: string) {
-  await requireUser();
-  const [doc] = await db.select().from(msaDocuments).where(eq(msaDocuments.id, docId)).limit(1);
-  if (!doc) throw new Error("MSA not found");
-  const content = doc.content as MsaContent;
+// Returns a result object rather than throwing — see generateMsa above for
+// why. This is the action behind the "Send" button in msa-panel.tsx; its
+// most common failure (RESEND_API_KEY not configured) needs to reach the
+// user as readable text, not a redacted digest.
+export async function sendMsaEmail(docId: string, toEmail: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await requireUser();
+    const [doc] = await db.select().from(msaDocuments).where(eq(msaDocuments.id, docId)).limit(1);
+    if (!doc) return { ok: false, error: "MSA not found" };
+    const content = doc.content as MsaContent;
 
-  const pdf = await renderMsaDocumentPdf(docId);
-  const signingUrl = `${process.env.NEXT_PUBLIC_APP_URL || ""}/msa/${doc.signingToken}`;
+    const pdf = await renderMsaDocumentPdf(docId);
+    const signingUrl = `${process.env.NEXT_PUBLIC_APP_URL || ""}/msa/${doc.signingToken}`;
 
-  await sendEmail({
-    to: toEmail,
-    subject: `Master Service Agreement — ${content.customerName} (Quote #${content.quoteNumber})`,
-    html: `<p>Hi${content.contactName ? ` ${content.contactName}` : ""},</p>
+    await sendEmail({
+      to: toEmail,
+      subject: `Master Service Agreement — ${content.customerName} (Quote #${content.quoteNumber})`,
+      html: `<p>Hi${content.contactName ? ` ${content.contactName}` : ""},</p>
 <p>Attached is the Master Service Agreement summarizing the services agreed to in Quote #${content.quoteNumber}.</p>
 <p>You can review and sign it online here: <a href="${signingUrl}">${signingUrl}</a></p>
 <p>Or reply to this email if you have any questions.</p>`,
-    attachments: [{ filename: `MSA-Quote-${content.quoteNumber}.pdf`, content: pdf }],
-  });
+      attachments: [{ filename: `MSA-Quote-${content.quoteNumber}.pdf`, content: pdf }],
+    });
 
-  await db
-    .update(msaDocuments)
-    .set({ status: doc.status === "DRAFT" ? "SENT" : doc.status, sentAt: new Date(), sentToEmail: toEmail })
-    .where(eq(msaDocuments.id, docId));
+    await db
+      .update(msaDocuments)
+      .set({ status: doc.status === "DRAFT" ? "SENT" : doc.status, sentAt: new Date(), sentToEmail: toEmail })
+      .where(eq(msaDocuments.id, docId));
 
-  revalidatePath(`/quotes/${doc.quoteId}`);
+    revalidatePath(`/quotes/${doc.quoteId}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not send the email" };
+  }
 }

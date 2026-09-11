@@ -29,12 +29,12 @@ export function MsaPanel({ quote, contact, document }: { quote: Quote; contact: 
 
   function generate() {
     startTransition(async () => {
-      try {
-        await generateMsa(quote.id);
+      const result = await generateMsa(quote.id);
+      if (result.ok) {
         router.refresh();
         toast.success(document ? "MSA regenerated from current quote data" : "MSA generated");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not generate the MSA");
+      } else {
+        toast.error(result.error || "Could not generate the MSA");
       }
     });
   }
@@ -51,12 +51,12 @@ export function MsaPanel({ quote, contact, document }: { quote: Quote; contact: 
       return;
     }
     startTransition(async () => {
-      try {
-        await sendMsaEmail(document.id, email.trim());
+      const result = await sendMsaEmail(document.id, email.trim());
+      if (result.ok) {
         router.refresh();
         toast.success(`MSA emailed to ${email.trim()}`);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not send the email");
+      } else {
+        toast.error(result.error || "Could not send the email");
       }
     });
   }
