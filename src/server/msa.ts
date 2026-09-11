@@ -127,6 +127,76 @@ export function buildMsaContent(input: {
   };
 }
 
+// Fabricated placeholder content for the Settings → MSA terms "Preview MSA"
+// button — lets an admin see exactly how the CURRENTLY SAVED terms will
+// render into a full document, without needing a real accepted quote to
+// generate against first. Never written to the database.
+export function buildSampleMsaContent(msaSettings: MsaSettings): MsaContent {
+  return {
+    generatedAt: new Date().toISOString(),
+    quoteNumber: 1000,
+    quoteTitle: "Sample Managed Services Quote",
+    customerName: "Sample Customer, Inc.",
+    customerAddress: "123 Main St, Anytown, ST 00000",
+    contactName: "Jane Doe",
+    contactEmail: "jane.doe@samplecustomer.com",
+    tierName: "Gold",
+    tierDescription:
+      "Fully managed IT with proactive monitoring, unlimited remote support, and quarterly strategic reviews.",
+    sla: {
+      name: "Business Hours + Emergency",
+      description: "Standard coverage with after-hours emergency response for critical issues.",
+      coverageHours: "Mon–Fri 7am–7pm, plus 24/7 for Critical severity",
+      uptimeGuaranteePct: "99.90",
+      severities: SEVERITY_LEVELS.map((level) => ({
+        level,
+        label: SEVERITY_LABELS[level],
+        responseMinutes: level === "critical" ? 30 : level === "high" ? 60 : level === "medium" ? 240 : 480,
+        resolutionHours: level === "critical" ? 4 : level === "high" ? 8 : level === "medium" ? 24 : 40,
+      })),
+      escalationProcess: null,
+      exclusions: null,
+    },
+    lineItems: [
+      {
+        categoryName: "Managed Services",
+        name: "Gold Plan — Managed Workstations",
+        description: null,
+        quantity: "25",
+        unitLabel: "workstation",
+        billingType: "RECURRING_MONTHLY",
+        unitPrice: "45.00",
+        lineTotal: "1125.00",
+      },
+      {
+        categoryName: "Managed Services",
+        name: "Gold Plan — Managed Servers",
+        description: null,
+        quantity: "3",
+        unitLabel: "server",
+        billingType: "RECURRING_MONTHLY",
+        unitPrice: "150.00",
+        lineTotal: "450.00",
+      },
+      {
+        categoryName: "Onboarding",
+        name: "Onboarding & Network Assessment",
+        description: "One-time onboarding, documentation, and baseline network assessment.",
+        quantity: "1",
+        unitLabel: "flat",
+        billingType: "ONE_TIME",
+        unitPrice: "1500.00",
+        lineTotal: "1500.00",
+      },
+    ],
+    totalMonthly: "1575.00",
+    totalOneTime: "1500.00",
+    validUntil: null,
+    notesToClient: null,
+    msaSettings,
+  };
+}
+
 export type MsaSection = {
   heading: string;
   paragraphs: string[];

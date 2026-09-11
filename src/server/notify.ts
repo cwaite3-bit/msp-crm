@@ -24,8 +24,37 @@ import { quotes, users, contacts, customers } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { sendEmail, isEmailConfigured } from "@/server/email";
 
+export type NewCustomerLead = {
+  customerId: string;
+  companyName: string;
+  industry: string | null;
+  website: string | null;
+  employeeCount: number | null;
+  phone: string | null;
+  email: string | null;
+  address: string;
+  contactName: string;
+  contactTitle: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  message: string | null;
+};
+
 export function appUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL || "";
+}
+
+// Every value below comes from the public, unauthenticated customer intake
+// form (see src/server/actions/public-intake.ts) — escape before
+// interpolating into the notification email's HTML so a prospect can't
+// inject markup/links into what lands in your inbox.
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export async function notifyQuoteCreator(quoteId: string, subject: string, html: string) {
@@ -79,5 +108,56 @@ export async function notifyCustomerQuoteSent(quoteId: string): Promise<{ sent: 
     return { sent: true };
   } catch (err) {
     return { sent: false, error: err instanceof Error ? err.message : "Failed to send the email" };
+  }
+}
+
+// Fires when a prospect submits the public "new customer" intake form
+// (/new-customer — see src/server/actions/public-intake.ts). Emails every
+// ADMIN user (same "no separate who-gets-notified setting" reasoning as
+// notifyQuoteCreator above — for a single-admin shop that's just the one
+// login, and it scales cleanly if more admins get added later) with
+// everything worth seeing at a glance, plus a link straight into the new
+// customer record. NEVER throws: the customer's submission must still
+// succeed even if their notification email fails to send, so failures are
+// only logged, matching notifyQuoteCreator's best-effort pattern. Silently
+// no-ops if RESEND_API_KEY isn't set.
+export async function notifyNewCustomerLead(lead: NewCustomerLead) {
+  if (!isEmailConfigured()) return;
+  try {
+    const admins = await db.select({ email: users.email }).from(users).where(eq(users.role, "ADMIN"));
+    const recipients = [...new Set(admins.map((a) => a.email).filter(Boolean))];
+    if (recipients.length === 0) return;
+
+    const rows: [string, string | null][] = [
+      ["Company", lead.companyName],
+      ["Industry", lead.industry],
+      ["Website", lead.website],
+      ["Employees", lead.employeeCount ? String(lead.employeeCount) : null],
+      ["Company phone", lead.phone],
+      ["Company email", lead.email],
+      ["Address", lead.address || null],
+      ["Contact", lead.contactName],
+      ["Contact title", lead.contactTitle],
+      ["Contact email", lead.contactEmail],
+      ["Contact phone", lead.contactPhone],
+    ];
+    const rowsHtml = rows
+      .filter((r): r is [string, string] => Boolean(r[1]))
+      .map(
+        ([label, value]) =>
+          `<tr><td style="padding:4px 16px 4px 0;color:#64748b;font-size:13px;white-space:nowrap;vertical-align:top;">${escapeHtml(label)}</td><td style="padding:4px 0;font-size:13px;font-weight:600;color:#0f172a;">${escapeHtml(value)}</td></tr>`
+      )
+      .join("");
+
+    const html = `<p>A new customer record was just created from the website intake form:</p>
+<table cellpadding="0" cellspacing="0">${rowsHtml}</table>
+${lead.message ? `<p style="margin-top:14px;margin-bottom:2px;color:#64748b;font-size:13px;">What they're looking for:</p><p style="white-space:pre-wrap;">${escapeHtml(lead.message)}</p>` : ""}
+<p style="margin-top:18px;"><a href="${appUrl()}/customers/${lead.customerId}">Open this customer in the CRM</a></p>`;
+
+    for (const to of recipients) {
+      await sendEmail({ to, subject: `New customer lead — ${lead.companyName}`, html });
+    }
+  } catch (err) {
+    console.error(`notifyNewCustomerLead failed for customer ${lead.customerId}:`, err);
   }
 }

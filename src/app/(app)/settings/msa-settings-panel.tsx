@@ -9,7 +9,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { updateMsaSettings } from "@/server/actions/settings";
 import { HelpTip } from "@/components/help-tip";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Eye } from "lucide-react";
 import type { MsaSettings, LiabilityCapType, EscalationLevel, RaciRow } from "@/server/pricing-data";
 
 function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
@@ -358,9 +358,20 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
         </div>
       </div>
 
-      <Button className="w-fit" onClick={save} disabled={pending}>
-        {pending ? "Saving…" : "Save MSA terms"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button className="w-fit" onClick={save} disabled={pending}>
+          {pending ? "Saving…" : "Save MSA terms"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-fit"
+          onClick={() => window.open("/api/msa/preview/pdf", "_blank")}
+        >
+          <Eye className="h-4 w-4" /> Preview MSA
+        </Button>
+        <span className="text-xs text-slate-400">Opens a PDF of the MSA using your currently saved terms with sample quote data — save first to include unsaved edits.</span>
+      </div>
     </div>
   );
 }

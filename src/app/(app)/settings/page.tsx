@@ -15,6 +15,8 @@ import { M365PricingPanel } from "./m365-pricing-panel";
 import { SlaPanel } from "./sla-panel";
 import { MsaSettingsPanel } from "./msa-settings-panel";
 import { TestEmailButton } from "./test-email-button";
+import { IntakeLinkCard } from "./intake-link-card";
+import { appUrl } from "@/server/notify";
 
 export default async function SettingsPage({
   searchParams,
@@ -92,6 +94,19 @@ export default async function SettingsPage({
             Sends a test email to {session?.user.email || "your account's email address"}.
           </p>
           <TestEmailButton />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>New customer intake link</CardTitle>
+          <CardDescription>
+            Send this link to a prospect so they can fill out their own company and contact info — submitting it
+            creates a Lead here and emails you the details, so you can start a quote right away.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <IntakeLinkCard url={`${appUrl()}/new-customer`} />
         </CardContent>
       </Card>
 
