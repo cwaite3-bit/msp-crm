@@ -86,6 +86,15 @@ export default async function SettingsPage({
               )}
             </div>
           )}
+          {session?.user.email && (
+            <p className="text-xs text-slate-400">
+              Questions about this integration? Contact{" "}
+              <a href={`mailto:${session.user.email}`} className="underline hover:text-slate-600">
+                {session.user.email}
+              </a>
+              .
+            </p>
+          )}
         </CardContent>
       </Card>
 

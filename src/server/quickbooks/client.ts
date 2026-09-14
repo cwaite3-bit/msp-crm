@@ -86,9 +86,16 @@ export async function qboFetch(path: string, init: RequestInit = {}) {
     },
   });
 
+  // Intuit recommends capturing this ID from every response — their support
+  // team uses it to look up a specific request when troubleshooting an API
+  // issue, so it's worth folding into whatever we log/store on failure.
+  const intuitTid = res.headers.get("intuit_tid");
+
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`QuickBooks API error (${res.status}) on ${path}: ${body}`);
+    throw new Error(
+      `QuickBooks API error (${res.status}) on ${path}: ${body}${intuitTid ? ` [intuit_tid: ${intuitTid}]` : ""}`
+    );
   }
   return res.json();
 }
