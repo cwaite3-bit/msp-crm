@@ -186,12 +186,13 @@ export async function signMsaPublic(
 
     const hdrs = await headers();
     const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrs.get("x-real-ip") || null;
+    const signedAt = new Date();
 
     await db
       .update(msaDocuments)
       .set({
         status: "SIGNED",
-        signedAt: new Date(),
+        signedAt,
         signedByName,
         signedByTitle: signedByTitle || null,
         signedIp: ip,
@@ -200,11 +201,34 @@ export async function signMsaPublic(
       .where(eq(msaDocuments.id, doc.id));
 
     const content = doc.content as MsaContent;
+
+    // Attach a copy of the fully-signed PDF to the notification email so a
+    // durable copy lands wherever that inbox is filed/synced (e.g. a mail
+    // rule saving it into a OneDrive/Dropbox folder), not just a link into
+    // the app — the customer wanted signed MSAs to end up on their own
+    // file system without building a separate cloud-storage integration.
+    // Best-effort: if PDF rendering fails for any reason, still notify
+    // without the attachment rather than losing the "MSA signed" email.
+    let signedPdf: Buffer | null = null;
+    try {
+      signedPdf = await renderMsaPdf(content, {
+        signedByName,
+        signedByTitle: signedByTitle || null,
+        signedAt: signedAt.toISOString(),
+        signedIp: ip,
+        signatureImageUrl: signatureImageDataUri || null,
+      });
+    } catch (err) {
+      console.error(`signMsaPublic: failed to render signed PDF for doc ${doc.id}:`, err);
+    }
+
     await notifyQuoteCreator(
       doc.quoteId,
       `MSA signed — quote #${content.quoteNumber}`,
       `<p><strong>${signedByName}</strong>${signedByTitle ? ` (${signedByTitle})` : ""} just signed the Master Service Agreement for quote #${content.quoteNumber} — ${content.customerName}. You can now send the first invoice to QuickBooks.</p>
-<p><a href="${await appUrl()}/quotes/${doc.quoteId}">Open the quote</a></p>`
+<p>The fully signed copy is attached${signedPdf ? "" : " — it couldn't be generated automatically this time, but you can download it from the quote"}.</p>
+<p><a href="${await appUrl()}/quotes/${doc.quoteId}">Open the quote</a></p>`,
+      signedPdf ? [{ filename: `Signed-MSA-Quote-${content.quoteNumber}.pdf`, content: signedPdf }] : undefined
     );
 
     revalidatePath(`/quotes/${doc.quoteId}`);

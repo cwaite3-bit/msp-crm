@@ -38,7 +38,18 @@ export async function sendEmail(input: SendEmailInput) {
   });
 
   if (error) {
-    throw new Error(`Email failed to send: ${error.message || String(error)}`);
+    // Resend's own error text for this case talks about "verifying a
+    // domain," which reads as if the domain itself isn't verified — but if
+    // RESEND_FROM_EMAIL was never set, the real issue is that we're still
+    // sending from Resend's shared onboarding@resend.dev test address,
+    // which can only email the Resend account's own inbox no matter how
+    // many domains are verified on the account. Make that distinction
+    // explicit so a verified-domain screenshot doesn't lead down the wrong
+    // path a second time.
+    const hint = !process.env.RESEND_FROM_EMAIL
+      ? " — no RESEND_FROM_EMAIL is set, so this is still sending from Resend's shared test address (onboarding@resend.dev), which can only reach your own Resend account email regardless of any domain you've verified. Set RESEND_FROM_EMAIL in Vercel to an address on your verified domain (e.g. quotes@yourdomain.com) and redeploy."
+      : "";
+    throw new Error(`Email failed to send: ${error.message || String(error)}${hint}`);
   }
   return data;
 }

@@ -82,14 +82,19 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
-export async function notifyQuoteCreator(quoteId: string, subject: string, html: string) {
+export async function notifyQuoteCreator(
+  quoteId: string,
+  subject: string,
+  html: string,
+  attachments?: { filename: string; content: Buffer }[]
+) {
   if (!isEmailConfigured()) return;
   try {
     const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
     if (!quote) return;
     const [creator] = await db.select().from(users).where(eq(users.id, quote.createdById)).limit(1);
     if (!creator?.email) return;
-    await sendEmail({ to: creator.email, subject, html });
+    await sendEmail({ to: creator.email, subject, html, attachments });
   } catch (err) {
     // Best-effort - log for visibility in Vercel's function logs, but never
     // let a notification failure affect the caller.

@@ -81,18 +81,26 @@ const styles = StyleSheet.create({
   signatureImage: { height: 26, width: 110, objectFit: "contain" },
 });
 
+// Single source of truth for the "signature" shape shared between the
+// internal MsaDocument component and the exported renderMsaPdf function
+// below — previously these were two separately hand-typed object literals
+// that had to be kept in sync by hand, and adding signatureImageUrl to only
+// one of them broke the production type-check without any warning at the
+// call site. Defining it once and reusing it here makes that impossible.
+export type MsaSignatureInfo = {
+  signedByName: string;
+  signedByTitle: string | null;
+  signedAt: string;
+  signedIp: string | null;
+  signatureImageUrl?: string | null;
+};
+
 function MsaDocument({
   content,
   signature,
 }: {
   content: MsaContent;
-  signature?: {
-    signedByName: string;
-    signedByTitle: string | null;
-    signedAt: string;
-    signedIp: string | null;
-    signatureImageUrl?: string | null;
-  } | null;
+  signature?: MsaSignatureInfo | null;
 }) {
   const sections = renderMsaSections(content);
   return (
@@ -227,9 +235,6 @@ function MsaDocument({
   );
 }
 
-export async function renderMsaPdf(
-  content: MsaContent,
-  signature?: { signedByName: string; signedByTitle: string | null; signedAt: string; signedIp: string | null } | null
-): Promise<Buffer> {
+export async function renderMsaPdf(content: MsaContent, signature?: MsaSignatureInfo | null): Promise<Buffer> {
   return renderToBuffer(<MsaDocument content={content} signature={signature ?? null} />);
 }

@@ -8,6 +8,9 @@ export default auth(function proxy(req) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/q/") || // shareable client-facing quote links
+    pathname.startsWith("/msa/") || // public MSA review/e-signing page (unguessable token, no login)
+    pathname.startsWith("/api/msa/token/") || // public "download this MSA as PDF" button on that page
+    pathname.startsWith("/new-customer") || // public prospect intake form
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/quickbooks/callback");
 
