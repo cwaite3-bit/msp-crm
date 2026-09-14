@@ -5,6 +5,7 @@ import { quotes, quoteLineItems, quoteEvents, customers, products, quickbooksCon
 import { eq, desc } from "drizzle-orm";
 import { auth } from "@/auth";
 import { findOrCreateQboCustomer, findOrCreateQboItem, createQboInvoice } from "@/server/quickbooks/sync";
+import { computeSubtotals, applyDiscount } from "@/server/pricing";
 import { getMsaSettings, getBillingSettings } from "@/server/actions/settings";
 import { notifyQuoteCreator, appUrl } from "@/server/notify";
 import { revalidatePath } from "next/cache";
@@ -90,6 +91,28 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
     const isAnnual = quote.billingFrequency === "ANNUAL";
     const annualMultiplier = isAnnual ? 12 * (1 - billingSettings.annualDiscountPct / 100) : 1;
 
+    // Apply the quote's own discount (set in Quote settings — see
+    // quote-meta-form.tsx) the same way computeQuoteTotals() does for the
+    // staff quote builder and the client-facing quote page: as a single
+    // discount applied to each billing bucket's subtotal (recurring+hourly
+    // "monthly" bucket, and the one-time bucket), NOT per line item. This
+    // was previously ignored entirely when pushing to QuickBooks — every
+    // invoice was built from full list-price unitPrice with the discount
+    // silently dropped, overcharging on any discounted quote. Converting
+    // each bucket's discount to a multiplier and applying it per line
+    // (rather than adding a separate invoice-level discount line) keeps
+    // this correct for both a flat AMOUNT discount and a PERCENT one, and
+    // composes cleanly with the existing annual-prepay multiplier below.
+    const { subtotalMonthly, subtotalOneTime } = computeSubtotals(lineItems);
+    const discountType = quote.discountType as "PERCENT" | "AMOUNT" | null;
+    const discountValue = quote.discountValue ? Number(quote.discountValue) : null;
+    const monthlyDiscountMultiplier =
+      subtotalMonthly > 0 ? applyDiscount(subtotalMonthly, discountType, discountValue) / subtotalMonthly : 1;
+    const oneTimeDiscountMultiplier =
+      subtotalOneTime > 0 ? applyDiscount(subtotalOneTime, discountType, discountValue) / subtotalOneTime : 1;
+    const hasDiscount = Boolean(discountType && discountValue);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
     const resolvedLines = [];
     for (const item of lineItems) {
       let qboItemId: string | null = null;
@@ -104,11 +127,13 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
         qboItemId = await findOrCreateQboItem(item.name);
       }
       const isRecurring = item.billingType === "RECURRING_MONTHLY";
+      const bucketMultiplier = item.billingType === "ONE_TIME" ? oneTimeDiscountMultiplier : monthlyDiscountMultiplier;
+      const discountedUnitPrice = Number(item.unitPrice) * bucketMultiplier;
       resolvedLines.push({
         itemId: qboItemId,
-        description: `${item.name} (${item.unitLabel})${isRecurring && isAnnual ? " — Annual (12 months)" : ""}`,
+        description: `${item.name} (${item.unitLabel})${isRecurring && isAnnual ? " — Annual (12 months)" : ""}${hasDiscount ? " (discount applied)" : ""}`,
         quantity: Number(item.quantity),
-        unitPrice: isRecurring ? Number(item.unitPrice) * annualMultiplier : Number(item.unitPrice),
+        unitPrice: round2(isRecurring ? discountedUnitPrice * annualMultiplier : discountedUnitPrice),
       });
     }
 
@@ -130,7 +155,7 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
       customerId: qboCustomerId,
       lines: resolvedLines,
       dueDate: dueDate.toISOString().slice(0, 10),
-      privateNote: `MSP CRM quote #${quote.quoteNumber} — first invoice after signed MSA${isAnnual ? " (annual prepayment)" : ""}.`,
+      privateNote: `MSP CRM quote #${quote.quoteNumber} — first invoice after signed MSA${isAnnual ? " (annual prepayment)" : ""}${hasDiscount ? ` (${discountType === "PERCENT" ? `${discountValue}% ` : `$${discountValue} `}discount applied)` : ""}.`,
     });
 
     await db
