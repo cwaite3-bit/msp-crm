@@ -22,11 +22,11 @@ import { appUrl } from "@/server/notify";
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ qbo_connected?: string; qbo_error?: string }>;
+  searchParams: Promise<{ qbo_connected?: string; qbo_error?: string; qbo_disconnected?: string }>;
 }) {
   const session = await auth();
   const isAdmin = session?.user.role === "ADMIN";
-  const { qbo_error } = await searchParams;
+  const { qbo_error, qbo_disconnected } = await searchParams;
 
   const qbo = await getQuickBooksStatus();
   const allUsers = isAdmin ? await listUsers() : [];
@@ -54,6 +54,11 @@ export default async function SettingsPage({
           {qbo_error && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
               Connection failed: {decodeURIComponent(qbo_error)}
+            </p>
+          )}
+          {qbo_disconnected && !qbo.connected && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              QuickBooks was disconnected from the QuickBooks side — reconnect below to resume invoicing.
             </p>
           )}
           {qbo.connected ? (

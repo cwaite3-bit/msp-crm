@@ -14,7 +14,8 @@ export default auth(function proxy(req) {
     pathname.startsWith("/eula") || // public legal page (required by Intuit for QBO production keys)
     pathname.startsWith("/privacy") || // public legal page (required by Intuit for QBO production keys)
     pathname.startsWith("/api/public") ||
-    pathname.startsWith("/api/quickbooks/callback");
+    pathname.startsWith("/api/quickbooks/callback") ||
+    pathname.startsWith("/api/quickbooks/disconnect-callback"); // Intuit's "Disconnect URL" — no session cookie guaranteed
 
   if (isPublic) return NextResponse.next();
 
