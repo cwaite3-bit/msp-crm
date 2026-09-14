@@ -87,11 +87,6 @@ export default function EulaPage() {
                 provided on your quote, agreement, or invoice.
               </p>
             </div>
-
-            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              This is a general-purpose template and not a substitute for advice from an attorney licensed in your
-              jurisdiction — consider having it reviewed before relying on it further.
-            </p>
           </div>
         </div>
       </div>
