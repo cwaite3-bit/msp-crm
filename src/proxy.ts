@@ -11,6 +11,8 @@ export default auth(function proxy(req) {
     pathname.startsWith("/msa/") || // public MSA review/e-signing page (unguessable token, no login)
     pathname.startsWith("/api/msa/token/") || // public "download this MSA as PDF" button on that page
     pathname.startsWith("/new-customer") || // public prospect intake form
+    pathname.startsWith("/eula") || // public legal page (required by Intuit for QBO production keys)
+    pathname.startsWith("/privacy") || // public legal page (required by Intuit for QBO production keys)
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/quickbooks/callback");
 
