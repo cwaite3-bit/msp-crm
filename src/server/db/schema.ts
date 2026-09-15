@@ -308,6 +308,17 @@ export const quotes = pgTable(
     // monthly engagement adjustment" line item. Persists until unset.
     waiveMinimumMrr: boolean("waive_minimum_mrr").notNull().default(false),
 
+    // For "infrastructure only" / one-off project quotes where showing the
+    // Bronze/Silver/Gold managed-services plans would be confusing or
+    // irrelevant (e.g. a hardware/network project for a prospect who isn't
+    // buying ongoing managed services). When true, the public quote page
+    // hides both the tier-comparison cards and the plan comparison & scope
+    // matrix table entirely — everything else on the quote (line items,
+    // totals, SLA, etc.) is unaffected. Defaults to false so existing
+    // behavior (driven by whether Discovery quantities were entered) is
+    // unchanged unless staff explicitly opt in.
+    hideTierComparison: boolean("hide_tier_comparison").notNull().default(false),
+
     subtotalMonthly: numeric("subtotal_monthly", { precision: 12, scale: 2 }).notNull().default("0"),
     subtotalOneTime: numeric("subtotal_one_time", { precision: 12, scale: 2 }).notNull().default("0"),
     totalMonthly: numeric("total_monthly", { precision: 12, scale: 2 }).notNull().default("0"),

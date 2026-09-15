@@ -370,6 +370,7 @@ export async function updateQuoteMeta(
     taxRatePct?: string | null;
     validUntil?: string | null;
     billingFrequency?: "MONTHLY" | "ANNUAL";
+    hideTierComparison?: boolean;
   }
 ) {
   await requireUser();
@@ -389,6 +390,7 @@ export async function updateQuoteMeta(
         ? { validUntil: data.validUntil ? new Date(data.validUntil) : null }
         : {}),
       ...(data.billingFrequency !== undefined ? { billingFrequency: data.billingFrequency } : {}),
+      ...(data.hideTierComparison !== undefined ? { hideTierComparison: data.hideTierComparison } : {}),
       updatedAt: new Date(),
     })
     .where(eq(quotes.id, quoteId));
@@ -609,6 +611,7 @@ export async function resetQuote(quoteId: string): Promise<{ ok: boolean; error?
         grossMarginPct: null,
         marginStatus: null,
         waiveMinimumMrr: false,
+        hideTierComparison: false,
         subtotalMonthly: "0",
         subtotalOneTime: "0",
         totalMonthly: "0",

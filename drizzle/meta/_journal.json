@@ -43,6 +43,13 @@
       "when": 1789170476279,
       "tag": "0005_cute_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789503139357,
+      "tag": "0006_long_bullseye",
+      "breakpoints": true
     }
   ]
 }

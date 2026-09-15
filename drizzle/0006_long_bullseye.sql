@@ -1,0 +1,1 @@
+ALTER TABLE "quotes" ADD COLUMN "hide_tier_comparison" boolean DEFAULT false NOT NULL;

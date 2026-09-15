@@ -152,7 +152,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
             </div>
           )}
 
-          {hasDiscoveryData && (
+          {hasDiscoveryData && !quote.hideTierComparison && (
             <div className="mb-10">
               <h2 className="mb-1 text-lg font-semibold text-slate-900">Three straightforward ways to engage</h2>
               <p className="mb-4 text-sm text-slate-500">
@@ -248,12 +248,14 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
                 </div>
               </div>
 
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Plan comparison &amp; scope
-                </p>
-                <ScopeMatrixTable rows={scopeMatrix} selectedTier={selectedTierKey} />
-              </div>
+              {!quote.hideTierComparison && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Plan comparison &amp; scope
+                  </p>
+                  <ScopeMatrixTable rows={scopeMatrix} selectedTier={selectedTierKey} />
+                </div>
+              )}
 
               <p className="text-xs text-slate-400">
                 Lockdown IT also provides custom application development, scripting/automation, migrations,

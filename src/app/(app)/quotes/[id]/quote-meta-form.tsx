@@ -33,6 +33,7 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
   const [notesToClient, setNotesToClient] = useState(quote.notesToClient ?? "");
   const [internalNotes, setInternalNotes] = useState(quote.internalNotes ?? "");
   const [billingFrequency, setBillingFrequency] = useState(quote.billingFrequency);
+  const [hideTierComparison, setHideTierComparison] = useState(quote.hideTierComparison);
 
   // The service tier can also be changed elsewhere (the Plan Comparison
   // panel's "Use this plan" / "Re-apply plan" buttons), which updates
@@ -59,6 +60,7 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
         notesToClient,
         internalNotes,
         billingFrequency,
+        hideTierComparison,
         ...extra,
       });
       router.refresh();
@@ -189,6 +191,18 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
             <SelectItem value="ANNUAL">Annual (prepaid)</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={hideTierComparison}
+            onChange={(e) => setHideTierComparison(e.target.checked)}
+          />
+          Infrastructure-only quote — hide Bronze/Silver/Gold plan comparison
+          <HelpTip text="For one-off hardware/network/project quotes that aren't a managed-services plan. Hides the tier-comparison cards and the plan comparison & scope matrix table on the client-facing quote page — everything else (line items, totals, SLA) is unaffected." />
+        </label>
       </div>
 
       <div className="flex flex-col gap-1.5">
