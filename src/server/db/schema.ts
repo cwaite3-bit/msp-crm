@@ -436,6 +436,7 @@ export const quoteEventTypeEnum = pgEnum("quote_event_type", [
   "REJECTED",
   "QUICKBOOKS_SYNCED",
   "QUICKBOOKS_SYNC_FAILED",
+  "OWNER_CHANGED",
 ]);
 
 export const quoteEvents = pgTable(

@@ -10,6 +10,7 @@ import {
   productCategories,
   serviceTiers,
   customers,
+  users,
 } from "@/server/db/schema";
 import { auth } from "@/auth";
 import { eq, desc, and } from "drizzle-orm";
@@ -81,6 +82,32 @@ export async function createQuote(customerId: string, contactId?: string) {
   await db.insert(quoteEvents).values({ quoteId: quote.id, type: "CREATED" });
   revalidatePath(`/customers/${customerId}`);
   redirect(`/quotes/${quote.id}`);
+}
+
+// Reassigns a quote to a different staff member. `createdById` isn't just
+// audit trail — it's also who shows up as the "Your point of contact" name,
+// photo, email, and phone on the client-facing quote/MSA pages (see
+// AccountContactCard), so this is a real ownership handoff, not a cosmetic
+// change. Open to any logged-in staff member (same access level as every
+// other quote-editing action here), not admin-only, so a rep who's handing
+// off an account doesn't need to wait on an admin.
+export async function transferQuoteOwner(quoteId: string, newOwnerId: string) {
+  await requireUser();
+  const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+  if (!quote) throw new Error("Quote not found");
+  if (quote.createdById === newOwnerId) return;
+
+  const [previousOwner] = await db.select({ name: users.name }).from(users).where(eq(users.id, quote.createdById)).limit(1);
+  const [newOwner] = await db.select({ name: users.name }).from(users).where(eq(users.id, newOwnerId)).limit(1);
+  if (!newOwner) throw new Error("Staff member not found");
+
+  await db.update(quotes).set({ createdById: newOwnerId, updatedAt: new Date() }).where(eq(quotes.id, quoteId));
+  await db.insert(quoteEvents).values({
+    quoteId,
+    type: "OWNER_CHANGED",
+    detail: `Reassigned from ${previousOwner?.name || "an unknown user"} to ${newOwner.name}`,
+  });
+  revalidatePath(`/quotes/${quoteId}`);
 }
 
 // ---------------------------------------------------------------------------

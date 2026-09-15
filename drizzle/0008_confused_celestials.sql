@@ -1,0 +1,1 @@
+ALTER TYPE "public"."quote_event_type" ADD VALUE 'OWNER_CHANGED';

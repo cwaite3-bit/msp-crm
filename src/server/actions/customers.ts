@@ -128,16 +128,42 @@ export async function addContact(customerId: string, formData: FormData) {
   const email = String(formData.get("email") || "") || null;
   const phone = String(formData.get("phone") || "") || null;
   const title = String(formData.get("title") || "") || null;
+  const isPrimary = formData.get("isPrimary") === "on";
+  const isBilling = formData.get("isBilling") === "on";
 
   if (!firstName && !lastName) return;
 
-  await db.insert(contacts).values({ customerId, firstName, lastName, email, phone, title });
+  // Only one contact per customer can hold each role — same invariant the
+  // public intake form relies on (see submitCustomerIntake) — so claiming a
+  // role here has to release it from whoever held it before.
+  if (isPrimary) await db.update(contacts).set({ isPrimary: false }).where(eq(contacts.customerId, customerId));
+  if (isBilling) await db.update(contacts).set({ isBilling: false }).where(eq(contacts.customerId, customerId));
+
+  await db.insert(contacts).values({ customerId, firstName, lastName, email, phone, title, isPrimary, isBilling });
   revalidatePath(`/customers/${customerId}`);
 }
 
 export async function deleteContact(customerId: string, contactId: string) {
   await requireUser();
   await db.delete(contacts).where(eq(contacts.id, contactId));
+  revalidatePath(`/customers/${customerId}`);
+}
+
+// Marks one contact as the customer's Primary or Billing contact, releasing
+// that role from whichever contact held it before — each customer has at
+// most one of each. Used by the "Make primary" / "Make billing" links on the
+// customer's Contacts card, so staff can (re)designate roles on contacts
+// added directly in the CRM, not just ones that came through the public
+// intake form (which sets these at creation time instead).
+export async function setContactRole(customerId: string, contactId: string, role: "primary" | "billing") {
+  await requireUser();
+  if (role === "primary") {
+    await db.update(contacts).set({ isPrimary: false }).where(eq(contacts.customerId, customerId));
+    await db.update(contacts).set({ isPrimary: true }).where(eq(contacts.id, contactId));
+  } else {
+    await db.update(contacts).set({ isBilling: false }).where(eq(contacts.customerId, customerId));
+    await db.update(contacts).set({ isBilling: true }).where(eq(contacts.id, contactId));
+  }
   revalidatePath(`/customers/${customerId}`);
 }
 

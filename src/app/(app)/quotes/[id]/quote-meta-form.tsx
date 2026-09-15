@@ -6,19 +6,33 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { updateQuoteMeta, repriceForTier } from "@/server/actions/quotes";
+import { updateQuoteMeta, repriceForTier, transferQuoteOwner } from "@/server/actions/quotes";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { HelpTip } from "@/components/help-tip";
 import type { quotes, serviceTiers, contacts, slas } from "@/server/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
+import type { listUsers } from "@/server/actions/users";
 
 type Quote = InferSelectModel<typeof quotes>;
 type Tier = InferSelectModel<typeof serviceTiers>;
 type Contact = InferSelectModel<typeof contacts>;
 type Sla = InferSelectModel<typeof slas>;
+type StaffMember = Awaited<ReturnType<typeof listUsers>>[number];
 
-export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quote; tiers: Tier[]; contacts: Contact[]; slaList: Sla[] }) {
+export function QuoteMetaForm({
+  quote,
+  tiers,
+  contacts,
+  slaList,
+  staff,
+}: {
+  quote: Quote;
+  tiers: Tier[];
+  contacts: Contact[];
+  slaList: Sla[];
+  staff: StaffMember[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [serviceTierId, setServiceTierId] = useState(quote.serviceTierId ?? "none");
@@ -34,6 +48,7 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
   const [internalNotes, setInternalNotes] = useState(quote.internalNotes ?? "");
   const [billingFrequency, setBillingFrequency] = useState(quote.billingFrequency);
   const [hideTierComparison, setHideTierComparison] = useState(quote.hideTierComparison);
+  const [ownerId, setOwnerId] = useState(quote.createdById);
 
   // The service tier can also be changed elsewhere (the Plan Comparison
   // panel's "Use this plan" / "Re-apply plan" buttons), which updates
@@ -77,6 +92,15 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
     });
   }
 
+  async function onOwnerChange(value: string) {
+    setOwnerId(value);
+    startTransition(async () => {
+      await transferQuoteOwner(quote.id, value);
+      router.refresh();
+      toast.success("Quote reassigned");
+    });
+  }
+
   async function onTierChange(value: string) {
     setServiceTierId(value);
     startTransition(async () => {
@@ -89,6 +113,25 @@ export function QuoteMetaForm({ quote, tiers, contacts, slaList }: { quote: Quot
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <Label className="flex items-center gap-1.5">
+          Owner
+          <HelpTip text="Which staff member this quote belongs to — also whose name, photo, email, and phone show as the customer's point of contact on the quote and MSA pages. Reassign here to transfer ownership to another staff member." />
+        </Label>
+        <Select value={ownerId} onValueChange={onOwnerChange}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {staff.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name} {s.active ? "" : "(inactive)"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <Label className="flex items-center gap-1.5">
           Service tier

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { addContact, deleteContact } from "@/server/actions/customers";
+import { addContact, deleteContact, setContactRole } from "@/server/actions/customers";
 import { Trash2, Plus } from "lucide-react";
 import type { contacts } from "@/server/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
@@ -20,13 +20,36 @@ export function ContactsPanel({ customerId, contacts: initial }: { customerId: s
       {initial.map((c) => (
         <div key={c.id} className="flex items-center justify-between rounded-md border border-slate-200 p-3">
           <div>
-            <div className="flex items-center gap-2 font-medium text-slate-900">
+            <div className="flex flex-wrap items-center gap-2 font-medium text-slate-900">
               {c.firstName} {c.lastName}
               {c.isPrimary && <Badge variant="secondary">Primary</Badge>}
+              {c.isBilling && <Badge variant="secondary">Billing</Badge>}
             </div>
             <div className="text-sm text-slate-500">
               {c.title ? `${c.title} · ` : ""}
               {c.email || "no email"} {c.phone ? `· ${c.phone}` : ""}
+            </div>
+            <div className="mt-1 flex gap-3 text-xs">
+              {!c.isPrimary && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="text-slate-400 hover:text-slate-600 hover:underline"
+                  onClick={() => startTransition(() => setContactRole(customerId, c.id, "primary"))}
+                >
+                  Make primary
+                </button>
+              )}
+              {!c.isBilling && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="text-slate-400 hover:text-slate-600 hover:underline"
+                  onClick={() => startTransition(() => setContactRole(customerId, c.id, "billing"))}
+                >
+                  Make billing contact
+                </button>
+              )}
             </div>
           </div>
           <Button
@@ -56,6 +79,16 @@ export function ContactsPanel({ customerId, contacts: initial }: { customerId: s
           <Input name="title" placeholder="Title" />
           <Input name="phone" placeholder="Phone" />
           <Input name="email" placeholder="Email" type="email" className="col-span-2" />
+          <div className="col-span-2 flex gap-4 text-sm text-slate-600">
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="isPrimary" />
+              Primary contact
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="isBilling" />
+              Billing contact
+            </label>
+          </div>
           <div className="col-span-2 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setAdding(false)}>
               Cancel

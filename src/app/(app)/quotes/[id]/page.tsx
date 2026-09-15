@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { listCatalog } from "@/server/actions/catalog";
 import { getRateCard, getChecklistTemplate, getM365Plans } from "@/server/actions/settings";
 import { listSlas } from "@/server/actions/slas";
+import { listUsers } from "@/server/actions/users";
 import { getMsaForQuote } from "@/server/actions/msa";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,6 +51,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const checklistTemplate = await getChecklistTemplate();
   const m365Plans = await getM365Plans();
   const slaList = await listSlas();
+  const staff = await listUsers();
   const msaDocument = await getMsaForQuote(id);
   const quantities: Quantities = { ...EMPTY_QUANTITIES, ...(quote.quantities as Partial<Quantities>) };
   const risk: RiskFactors = { ...DEFAULT_RISK_FACTORS, ...(quote.riskFactors as Partial<RiskFactors>) };
@@ -154,7 +156,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
               <CardTitle>Quote settings</CardTitle>
             </CardHeader>
             <CardContent>
-              <QuoteMetaForm quote={quote} tiers={catalog.tiers} contacts={customerContacts} slaList={slaList} />
+              <QuoteMetaForm quote={quote} tiers={catalog.tiers} contacts={customerContacts} slaList={slaList} staff={staff} />
             </CardContent>
           </Card>
 
