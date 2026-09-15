@@ -117,7 +117,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
         </div>
 
         {/* Header */}
-        <div className="bg-slate-900 px-8 py-8 text-white">
+        <div className="bg-[#024996] px-8 py-8 text-white">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">Quote</p>
@@ -191,7 +191,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
           ))}
 
           {/* Totals */}
-          <div className="mt-8 overflow-hidden rounded-lg bg-slate-900 text-white">
+          <div className="mt-8 overflow-hidden rounded-lg bg-[#024996] text-white">
             {quote.billingFrequency === "ANNUAL" ? (
               <div className="flex items-center justify-between px-6 py-4">
                 <span className="text-sm font-medium text-slate-300">
