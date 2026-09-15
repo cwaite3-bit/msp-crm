@@ -112,7 +112,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
     <div className="min-h-screen bg-slate-100 py-10 print:bg-white print:py-0">
       <div className="mx-auto max-w-3xl rounded-xl bg-white shadow-lg print:shadow-none">
         {/* Logo strip */}
-        <div className="flex items-center justify-center rounded-t-xl border-b border-slate-100 bg-white px-8 py-8">
+        <div className="flex items-center justify-center rounded-t-xl border-b border-slate-100 bg-white px-8 py-3">
           <Image src="/lockdown-logo.png" alt="Lockdown IT" width={5052} height={1264} className="h-28 w-auto" priority />
         </div>
 
