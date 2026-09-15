@@ -38,12 +38,36 @@ const intakeSchema = z
     contactTitle: z.string().optional(),
     contactEmail: z.string().optional(),
     contactPhone: z.string().optional(),
+    // "true"/"false" from the hidden input that always accompanies the
+    // "billing contact is the same person" checkbox (see intake-form.tsx —
+    // an unchecked checkbox submits no value at all, so the form always
+    // sends this explicitly instead of relying on the checkbox's own name).
+    billingSameAsContact: z.string().optional(),
+    billingContactFirstName: z.string().optional(),
+    billingContactLastName: z.string().optional(),
+    billingContactTitle: z.string().optional(),
+    billingContactEmail: z.string().optional(),
+    billingContactPhone: z.string().optional(),
     message: z.string().optional(),
   })
   .refine((v) => Boolean(v.contactEmail?.trim() || v.contactPhone?.trim()), {
     message: "Please provide an email or phone number so we can reach you",
     path: ["contactEmail"],
-  });
+  })
+  .refine(
+    (v) => v.billingSameAsContact !== "false" || Boolean(v.billingContactFirstName?.trim() && v.billingContactLastName?.trim()),
+    {
+      message: "Please provide the billing contact's name, or check \"billing contact is the same person\"",
+      path: ["billingContactFirstName"],
+    }
+  )
+  .refine(
+    (v) => v.billingSameAsContact !== "false" || Boolean(v.billingContactEmail?.trim() || v.billingContactPhone?.trim()),
+    {
+      message: "Please provide an email or phone number for the billing contact",
+      path: ["billingContactEmail"],
+    }
+  );
 
 export async function submitCustomerIntake(formData: FormData): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -68,6 +92,8 @@ export async function submitCustomerIntake(formData: FormData): Promise<{ ok: bo
       })
       .returning();
 
+    const billingSameAsContact = parsed.billingSameAsContact !== "false";
+
     await db.insert(contacts).values({
       customerId: customer.id,
       firstName: parsed.contactFirstName,
@@ -76,7 +102,21 @@ export async function submitCustomerIntake(formData: FormData): Promise<{ ok: bo
       phone: parsed.contactPhone || null,
       title: parsed.contactTitle || null,
       isPrimary: true,
+      isBilling: billingSameAsContact,
     });
+
+    if (!billingSameAsContact) {
+      await db.insert(contacts).values({
+        customerId: customer.id,
+        firstName: parsed.billingContactFirstName!,
+        lastName: parsed.billingContactLastName!,
+        email: parsed.billingContactEmail || null,
+        phone: parsed.billingContactPhone || null,
+        title: parsed.billingContactTitle || null,
+        isPrimary: false,
+        isBilling: true,
+      });
+    }
 
     if (parsed.message?.trim()) {
       await db.insert(notes).values({
@@ -104,6 +144,12 @@ export async function submitCustomerIntake(formData: FormData): Promise<{ ok: bo
       contactTitle: parsed.contactTitle || null,
       contactEmail: parsed.contactEmail || null,
       contactPhone: parsed.contactPhone || null,
+      billingContactName: billingSameAsContact
+        ? null
+        : `${parsed.billingContactFirstName} ${parsed.billingContactLastName}`.trim(),
+      billingContactTitle: billingSameAsContact ? null : parsed.billingContactTitle || null,
+      billingContactEmail: billingSameAsContact ? null : parsed.billingContactEmail || null,
+      billingContactPhone: billingSameAsContact ? null : parsed.billingContactPhone || null,
       message: parsed.message || null,
     });
 

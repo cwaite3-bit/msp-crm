@@ -125,6 +125,11 @@ export const contacts = pgTable(
     email: text("email"),
     phone: text("phone"),
     isPrimary: boolean("is_primary").notNull().default(false),
+    // Set when this contact is who invoices/billing questions should go to
+    // (can be the same person as the primary contact, or a separate
+    // accounts-payable contact) — the public intake form's "billing contact
+    // is the same person" checkbox is what usually sets this.
+    isBilling: boolean("is_billing").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

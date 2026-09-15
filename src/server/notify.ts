@@ -38,6 +38,13 @@ export type NewCustomerLead = {
   contactTitle: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  // Present only when the visitor said the billing contact is someone other
+  // than themselves (unchecked "same as above" on the intake form) — null
+  // when it's the same person, so the email just shows one contact.
+  billingContactName: string | null;
+  billingContactTitle: string | null;
+  billingContactEmail: string | null;
+  billingContactPhone: string | null;
   message: string | null;
 };
 
@@ -170,6 +177,10 @@ export async function notifyNewCustomerLead(lead: NewCustomerLead) {
       ["Contact title", lead.contactTitle],
       ["Contact email", lead.contactEmail],
       ["Contact phone", lead.contactPhone],
+      ["Billing contact", lead.billingContactName],
+      ["Billing contact title", lead.billingContactTitle],
+      ["Billing contact email", lead.billingContactEmail],
+      ["Billing contact phone", lead.billingContactPhone],
     ];
     const rowsHtml = rows
       .filter((r): r is [string, string] => Boolean(r[1]))

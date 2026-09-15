@@ -1,0 +1,1 @@
+ALTER TABLE "contacts" ADD COLUMN "is_billing" boolean DEFAULT false NOT NULL;

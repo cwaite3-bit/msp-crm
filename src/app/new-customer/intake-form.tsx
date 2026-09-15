@@ -12,6 +12,10 @@ export function IntakeForm() {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Most prospects filling this out ARE the billing contact, so default to
+  // checked to save the common case a second round of typing — unchecking
+  // reveals a separate set of billing contact fields below.
+  const [billingSameAsContact, setBillingSameAsContact] = useState(true);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -106,6 +110,53 @@ export function IntakeForm() {
           </div>
         </div>
         <p className="mt-1.5 text-xs text-slate-400">Please provide at least an email or a phone number.</p>
+      </div>
+
+      <div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="billingSameAsContact"
+            checked={billingSameAsContact}
+            onChange={(e) => setBillingSameAsContact(e.target.checked)}
+          />
+          <Label htmlFor="billingSameAsContact" className="font-normal">
+            Billing contact is the same person as above
+          </Label>
+        </div>
+        {/* Always present in the submitted form data (checkboxes only submit
+            a value when checked), so the server action can tell "same
+            person" apart from "left the billing fields blank." */}
+        <input type="hidden" name="billingSameAsContact" value={billingSameAsContact ? "true" : "false"} />
+
+        {!billingSameAsContact && (
+          <div className="mt-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Billing contact</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="billingContactFirstName">First name *</Label>
+                <Input id="billingContactFirstName" name="billingContactFirstName" required />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="billingContactLastName">Last name *</Label>
+                <Input id="billingContactLastName" name="billingContactLastName" required />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="billingContactTitle">Title</Label>
+                <Input id="billingContactTitle" name="billingContactTitle" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="billingContactPhone">Phone</Label>
+                <Input id="billingContactPhone" name="billingContactPhone" />
+              </div>
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
+                <Label htmlFor="billingContactEmail">Email</Label>
+                <Input id="billingContactEmail" name="billingContactEmail" type="email" />
+              </div>
+            </div>
+            <p className="mt-1.5 text-xs text-slate-400">Please provide at least an email or a phone number.</p>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
