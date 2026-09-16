@@ -29,11 +29,6 @@ export default async function MsaSigningPage({ params }: { params: Promise<{ tok
         </div>
 
         <div className="px-8 py-8">
-          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 print:hidden">
-            This document was generated from the referenced quote and this provider&rsquo;s standard terms. It is a
-            template provided for convenience and is not a substitute for independent legal advice.
-          </div>
-
           {content.accountContact && (
             <div className="mb-6">
               <AccountContactCard

@@ -75,7 +75,7 @@ export function MsaPanel({ quote, contact, document }: { quote: Quote; contact: 
       <p className="flex items-start gap-1.5 text-xs text-slate-500">
         Summarizes the agreed tier, SLA, and line items into a full agreement — signable in-app or downloadable to
         upload to Adobe Acrobat Sign, DocuSign, or your e-signature provider of choice.
-        <HelpTip text="This is a generated starting template, not legal advice. Review the standing terms in Settings → MSA terms, and have an attorney review the language before relying on it." />
+        <HelpTip text="Review or edit the standing terms this pulls from at Settings → MSA terms." />
       </p>
 
       {document && (
