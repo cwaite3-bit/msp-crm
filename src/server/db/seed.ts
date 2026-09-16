@@ -152,15 +152,15 @@ async function main() {
   // Bronze/Silver/Gold, matching the Lockdown IT quote-builder spreadsheet's
   // plans. Silver is the default for a new quote — it's the workbook's own
   // "usual" example scenario.
-  const good = await upsertTier("Bronze", "Managed Foundation — business hours support, standard priority", 0, false, "orange");
+  const good = await upsertTier("Bronze", "Managed Foundation — business hours support, standard priority", 0, false, "bronze");
   const better = await upsertTier(
     "Silver",
     "Managed Complete — unlimited qualifying help desk, priority response",
     1,
     true,
-    "slate",
+    "silver",
   );
-  const best = await upsertTier("Gold", "Managed Premier — highest priority, vCIO strategic allowance", 2, false, "amber");
+  const best = await upsertTier("Gold", "Managed Premier — highest priority, vCIO strategic allowance", 2, false, "gold");
 
   console.log("Seeding product categories…");
   const support = await upsertCategory("Support", 0);

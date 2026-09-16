@@ -173,7 +173,7 @@ export const serviceTiers = pgTable("service_tiers", {
   sortOrder: integer("sort_order").notNull().default(0),
   isDefault: boolean("is_default").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  // A key into TIER_COLOR_CLASSES (src/lib/tier-colors.ts), e.g. "amber" —
+  // A key into TIER_COLOR_CLASSES (src/lib/tier-colors.ts), e.g. "bronze" —
   // never a raw hex value, so the Catalog page's color-coded badges/column
   // headings can always render from a small fixed set of pre-built,
   // accessible Tailwind class strings rather than generating classes
@@ -472,6 +472,8 @@ export const quoteEventTypeEnum = pgEnum("quote_event_type", [
   "OWNER_CHANGED",
   "ADDENDUM_SIGNED",
   "ADDENDUM_DECLINED",
+  "MSA_COUNTERSIGNED",
+  "ADDENDUM_COUNTERSIGNED",
 ]);
 
 export const quoteEvents = pgTable(
@@ -535,6 +537,20 @@ export const msaDocuments = pgTable(
     // store-directly-on-the-row pattern as users.photoUrl, since there's
     // no durable file storage on Vercel's serverless filesystem.
     signatureImageUrl: text("signature_image_url"),
+
+    // Provider (staff) countersignature — filled in from inside the app,
+    // after the customer has already signed, via countersignMsa in
+    // src/server/actions/msa.ts. Deliberately additive nullable columns
+    // rather than a new document status: `status` stays SIGNED the moment
+    // the customer signs (so every existing `status === "SIGNED"` gate —
+    // QuickBooks invoicing, addendum eligibility, the public page's "signed"
+    // badge — keeps working unchanged), and "fully executed" is just
+    // `providerSignedAt !== null` wherever that distinction matters.
+    providerSignedAt: timestamp("provider_signed_at"),
+    providerSignedByName: text("provider_signed_by_name"),
+    providerSignedByTitle: text("provider_signed_by_title"),
+    providerSignedByUserId: text("provider_signed_by_user_id").references(() => users.id),
+    providerSignatureImageUrl: text("provider_signature_image_url"),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -611,6 +627,16 @@ export const quoteAddendums = pgTable(
     signedByTitle: text("signed_by_title"),
     signedIp: text("signed_ip"),
     signatureImageUrl: text("signature_image_url"),
+
+    // Provider (staff) countersignature — see the identical columns on
+    // msaDocuments above for the full rationale; mirrored here so an
+    // addendum can be countersigned the same way once the customer has
+    // signed it.
+    providerSignedAt: timestamp("provider_signed_at"),
+    providerSignedByName: text("provider_signed_by_name"),
+    providerSignedByTitle: text("provider_signed_by_title"),
+    providerSignedByUserId: text("provider_signed_by_user_id").references(() => users.id),
+    providerSignatureImageUrl: text("provider_signature_image_url"),
 
     declinedAt: timestamp("declined_at"),
 
@@ -752,11 +778,13 @@ export const slasRelations = relations(slas, ({ many }) => ({
 
 export const msaDocumentsRelations = relations(msaDocuments, ({ one }) => ({
   quote: one(quotes, { fields: [msaDocuments.quoteId], references: [quotes.id] }),
+  providerSignedBy: one(users, { fields: [msaDocuments.providerSignedByUserId], references: [users.id] }),
 }));
 
 export const quoteAddendumsRelations = relations(quoteAddendums, ({ one, many }) => ({
   quote: one(quotes, { fields: [quoteAddendums.quoteId], references: [quotes.id] }),
   createdBy: one(users, { fields: [quoteAddendums.createdById], references: [users.id] }),
+  providerSignedBy: one(users, { fields: [quoteAddendums.providerSignedByUserId], references: [users.id] }),
   lineItems: many(quoteAddendumLineItems),
   mergedLineItems: many(quoteLineItems),
 }));

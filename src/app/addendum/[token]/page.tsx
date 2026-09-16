@@ -4,6 +4,7 @@ import { getAddendumByToken } from "@/server/actions/addendums";
 import { renderAddendumSections, type AddendumContent } from "@/server/addendum";
 import { AddendumSignPanel } from "./addendum-sign-panel";
 import { AccountContactCard } from "@/components/account-contact-card";
+import { CheckCircle2 } from "lucide-react";
 
 export default async function AddendumSigningPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -32,11 +33,6 @@ export default async function AddendumSigningPage({ params }: { params: Promise<
         </div>
 
         <div className="px-8 py-8">
-          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 print:hidden">
-            This document amends the Master Service Agreement referenced below. It is a template provided for
-            convenience and is not a substitute for independent legal advice.
-          </div>
-
           {content.accountContact && (
             <div className="mb-6">
               <AccountContactCard
@@ -87,6 +83,17 @@ export default async function AddendumSigningPage({ params }: { params: Promise<
               </div>
             ))}
           </div>
+
+          {doc.providerSignedAt && (
+            <div className="mt-8 flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-emerald-800">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="text-sm font-medium">
+                Fully executed — also countersigned by {doc.providerSignedByName}
+                {doc.providerSignedByTitle ? `, ${doc.providerSignedByTitle}` : ""} on{" "}
+                {new Date(doc.providerSignedAt).toLocaleDateString()}
+              </span>
+            </div>
+          )}
 
           <div className="mt-8 border-t border-slate-200 pt-6 print:hidden">
             <AddendumSignPanel

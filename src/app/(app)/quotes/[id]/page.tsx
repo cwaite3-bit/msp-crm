@@ -2,6 +2,7 @@ import { db } from "@/server/db";
 import { quotes, quoteLineItems, customers, contacts, serviceTiers, quoteAddendumLineItems } from "@/server/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { auth } from "@/auth";
 import { listCatalog } from "@/server/actions/catalog";
 import { getRateCard, getChecklistTemplate, getM365Plans } from "@/server/actions/settings";
 import { listSlas } from "@/server/actions/slas";
@@ -58,6 +59,17 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const staff = await listUsers();
   const msaDocument = await getMsaForQuote(id);
   const addendums = await listAddendumsForQuote(id);
+  const session = await auth();
+  // Default name/title for the "countersign" dialogs below — pre-fills with
+  // whoever's logged in, since in practice that's almost always the account
+  // owner countersigning their own quote. Just a form default; the staff
+  // member can still edit it before confirming.
+  const currentStaffUser = session?.user?.id ? staff.find((u) => u.id === session.user!.id) ?? null : null;
+  const currentUser = currentStaffUser
+    ? { name: currentStaffUser.name, title: currentStaffUser.title }
+    : session?.user?.name
+      ? { name: session.user.name, title: null }
+      : null;
   const addendumLineItemRows =
     addendums.length > 0
       ? await db
@@ -186,7 +198,12 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
               <CardTitle>Master Service Agreement</CardTitle>
             </CardHeader>
             <CardContent>
-              <MsaPanel quote={quote} contact={customerContacts.find((c) => c.id === quote.contactId) ?? null} document={msaDocument} />
+              <MsaPanel
+                quote={quote}
+                contact={customerContacts.find((c) => c.id === quote.contactId) ?? null}
+                document={msaDocument}
+                currentUser={currentUser}
+              />
             </CardContent>
           </Card>
 
@@ -202,6 +219,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
                 lineItemsByAddendum={lineItemsByAddendum}
                 catalog={catalog}
                 contact={customerContacts.find((c) => c.id === quote.contactId) ?? null}
+                currentUser={currentUser}
               />
             </CardContent>
           </Card>

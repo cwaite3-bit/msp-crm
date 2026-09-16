@@ -100,9 +100,11 @@ export type MsaSignatureInfo = {
 function MsaDocument({
   content,
   signature,
+  providerSignature,
 }: {
   content: MsaContent;
   signature?: MsaSignatureInfo | null;
+  providerSignature?: MsaSignatureInfo | null;
 }) {
   const sections = renderMsaSections(content);
   return (
@@ -177,20 +179,34 @@ function MsaDocument({
             <View style={styles.signatureColumn}>
               <Text style={styles.signatureColumnLabel}>Provider — {content.msaSettings.providerLegalName || "[Provider legal name]"}</Text>
               <View style={styles.signatureRow}>
-                <Text style={styles.signatureRowLabel}>Signature</Text>
-                <Text style={styles.signatureRowValue}> </Text>
+                <Text style={styles.signatureRowLabel}>
+                  Signature{providerSignature ? (providerSignature.signatureImageUrl ? " (drawn)" : " (typed)") : ""}
+                </Text>
+                {providerSignature?.signatureImageUrl ? (
+                  <View style={styles.signatureImageWrap}>
+                    <Image src={providerSignature.signatureImageUrl} style={styles.signatureImage} />
+                  </View>
+                ) : (
+                  <Text style={styles.signatureRowValue}>{providerSignature ? providerSignature.signedByName : " "}</Text>
+                )}
               </View>
               <View style={styles.signatureRow}>
                 <Text style={styles.signatureRowLabel}>Name</Text>
-                <Text style={styles.signatureRowValue}>{content.msaSettings.providerSignerName || " "}</Text>
+                <Text style={styles.signatureRowValue}>
+                  {providerSignature ? providerSignature.signedByName : content.msaSettings.providerSignerName || " "}
+                </Text>
               </View>
               <View style={styles.signatureRow}>
                 <Text style={styles.signatureRowLabel}>Title</Text>
-                <Text style={styles.signatureRowValue}>{content.msaSettings.providerSignerTitle || " "}</Text>
+                <Text style={styles.signatureRowValue}>
+                  {providerSignature ? providerSignature.signedByTitle || " " : content.msaSettings.providerSignerTitle || " "}
+                </Text>
               </View>
               <View style={styles.signatureRow}>
                 <Text style={styles.signatureRowLabel}>Date</Text>
-                <Text style={styles.signatureRowValue}> </Text>
+                <Text style={styles.signatureRowValue}>
+                  {providerSignature ? new Date(providerSignature.signedAt).toLocaleString() : " "}
+                </Text>
               </View>
             </View>
 
@@ -228,15 +244,21 @@ function MsaDocument({
         </View>
 
         <Text style={styles.footer}>
-          {signature
-            ? `Signed electronically via ${signature.signatureImageUrl ? "a drawn signature" : "a typed name"}, with the signer's IP address logged — not a certified/notarized digital signature. Retain for your records.`
-            : "Unsigned template — upload to Adobe Acrobat Sign, DocuSign, or your e-signature provider of choice to route for signature, or use this system's own signing link."}
+          {signature && providerSignature
+            ? "Fully executed — signed electronically by both the client and the provider, with each signer's IP address logged where available. Not a certified/notarized digital signature. Retain for your records."
+            : signature
+              ? `Signed electronically via ${signature.signatureImageUrl ? "a drawn signature" : "a typed name"}, with the signer's IP address logged — not a certified/notarized digital signature. Retain for your records.`
+              : "Unsigned template — upload to Adobe Acrobat Sign, DocuSign, or your e-signature provider of choice to route for signature, or use this system's own signing link."}
         </Text>
       </Page>
     </Document>
   );
 }
 
-export async function renderMsaPdf(content: MsaContent, signature?: MsaSignatureInfo | null): Promise<Buffer> {
-  return renderToBuffer(<MsaDocument content={content} signature={signature ?? null} />);
+export async function renderMsaPdf(
+  content: MsaContent,
+  signature?: MsaSignatureInfo | null,
+  providerSignature?: MsaSignatureInfo | null
+): Promise<Buffer> {
+  return renderToBuffer(<MsaDocument content={content} signature={signature ?? null} providerSignature={providerSignature ?? null} />);
 }

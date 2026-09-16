@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { HelpTip } from "@/components/help-tip";
+import { CountersignControl } from "@/components/countersign-control";
 import { LineItemDescription } from "./line-item-description";
 import { formatCurrency } from "@/lib/utils";
 import { computeSubtotals, groupByCategory } from "@/server/pricing";
@@ -43,6 +44,7 @@ import {
   markAddendumSent,
   sendAddendumEmail,
   declineAddendumPublic,
+  countersignAddendum,
 } from "@/server/actions/addendums";
 import { pushAddendumToQuickBooks } from "@/server/actions/quickbooks";
 import { quickCreateProduct, type listCatalog } from "@/server/actions/catalog";
@@ -80,6 +82,7 @@ export function AddendumsPanel({
   lineItemsByAddendum,
   catalog,
   contact,
+  currentUser,
 }: {
   quoteId: string;
   msaSigned: boolean;
@@ -87,6 +90,7 @@ export function AddendumsPanel({
   lineItemsByAddendum: Record<string, AddendumLineItem[]>;
   catalog: Catalog;
   contact: Contact | null;
+  currentUser: { name: string; title: string | null } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -122,7 +126,7 @@ export function AddendumsPanel({
       <p className="flex items-start gap-1.5 text-xs text-slate-500">
         For services added after the MSA is signed. Each addendum is its own short document that references and
         amends the signed MSA — the customer signs just the addendum, not the whole agreement again.
-        <HelpTip text="Once signed, an addendum's line items are automatically added to this quote and its totals recalculated. This is a generated starting template, not legal advice." />
+        <HelpTip text="Once signed, an addendum's line items are automatically added to this quote and its totals recalculated." />
       </p>
 
       {addendums.map((addendum) => (
@@ -132,6 +136,7 @@ export function AddendumsPanel({
           lineItems={lineItemsByAddendum[addendum.id] || []}
           catalog={catalog}
           contact={contact}
+          currentUser={currentUser}
         />
       ))}
 
@@ -169,11 +174,13 @@ function AddendumCard({
   lineItems,
   catalog,
   contact,
+  currentUser,
 }: {
   addendum: Addendum;
   lineItems: AddendumLineItem[];
   catalog: Catalog;
   contact: Contact | null;
+  currentUser: { name: string; title: string | null } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -305,6 +312,16 @@ function AddendumCard({
           <CheckCircle2 className="mr-1 h-3 w-3" /> Signed by {addendum.signedByName}
           {addendum.signedAt ? ` on ${new Date(addendum.signedAt).toLocaleDateString()}` : ""}
         </Badge>
+      )}
+      {addendum.status === "SIGNED" && (
+        <CountersignControl
+          label={`Addendum #${addendum.number}`}
+          countersign={(sig, name, title) => countersignAddendum(addendum.id, sig, name, title)}
+          providerSignedAt={addendum.providerSignedAt}
+          providerSignedByName={addendum.providerSignedByName}
+          providerSignedByTitle={addendum.providerSignedByTitle}
+          currentUser={currentUser}
+        />
       )}
       {addendum.status === "DECLINED" && (
         <Badge variant="destructive" className="w-fit">

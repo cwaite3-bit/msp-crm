@@ -4,6 +4,7 @@ import { getMsaByToken } from "@/server/actions/msa";
 import { renderMsaSections, type MsaContent } from "@/server/msa";
 import { MsaSignPanel } from "./msa-sign-panel";
 import { AccountContactCard } from "@/components/account-contact-card";
+import { CheckCircle2 } from "lucide-react";
 
 export default async function MsaSigningPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -79,6 +80,17 @@ export default async function MsaSigningPage({ params }: { params: Promise<{ tok
               </div>
             ))}
           </div>
+
+          {doc.providerSignedAt && (
+            <div className="mt-8 flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-emerald-800">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="text-sm font-medium">
+                Fully executed — also countersigned by {doc.providerSignedByName}
+                {doc.providerSignedByTitle ? `, ${doc.providerSignedByTitle}` : ""} on{" "}
+                {new Date(doc.providerSignedAt).toLocaleDateString()}
+              </span>
+            </div>
+          )}
 
           <div className="mt-8 border-t border-slate-200 pt-6 print:hidden">
             <MsaSignPanel

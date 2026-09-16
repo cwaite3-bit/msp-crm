@@ -85,6 +85,13 @@
       "when": 1789524014761,
       "tag": "0011_add_tier_color",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789526230847,
+      "tag": "0012_add_provider_countersignature",
+      "breakpoints": true
     }
   ]
 }

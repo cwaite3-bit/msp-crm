@@ -21,7 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Plus, Archive, Pencil, GripVertical, Palette } from "lucide-react";
+import { Plus, Archive, Pencil, GripVertical, Palette, Search, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   createProduct,
@@ -45,6 +45,25 @@ export function CatalogManager({ catalog }: { catalog: Catalog }) {
   const [pending, startTransition] = useTransition();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<Catalog["products"][number] | null>(null);
+  const [search, setSearch] = useState("");
+
+  const categoryNameById = new Map(catalog.categories.map((c) => [c.id, c.name]));
+  const query = search.trim().toLowerCase();
+  // Matches on the product's own name/description, or its category name —
+  // typing "backup" finds both a "Backup" category and a product whose
+  // name/description mentions backup, without needing separate controls
+  // for the two.
+  const filteredProducts = query
+    ? catalog.products.filter((p) => {
+        const categoryName = categoryNameById.get(p.categoryId) ?? "";
+        return (
+          p.name.toLowerCase().includes(query) ||
+          (p.description ?? "").toLowerCase().includes(query) ||
+          categoryName.toLowerCase().includes(query)
+        );
+      })
+    : catalog.products;
+  const noSearchMatches = query.length > 0 && filteredProducts.length === 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -73,12 +92,42 @@ export function CatalogManager({ catalog }: { catalog: Catalog }) {
 
         <QuickAddCategory />
         <QuickAddTier />
+
+        <div className="relative ml-auto w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search products & services…"
+            className="pl-8 pr-8"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              title="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <ServiceTierBadges tiers={catalog.tiers} />
 
+      {noSearchMatches && (
+        <p className="rounded-md border border-dashed border-slate-200 p-4 text-center text-sm text-slate-500">
+          No products or services match &ldquo;{search.trim()}&rdquo;.
+        </p>
+      )}
+
       {catalog.categories.map((cat) => {
-        const catProducts = catalog.products.filter((p) => p.categoryId === cat.id);
+        const catProducts = filteredProducts.filter((p) => p.categoryId === cat.id);
+        // While searching, a category with no matches is just hidden —
+        // that's different from the "no products in this category yet"
+        // empty state below, which only applies with no search active.
+        if (query && catProducts.length === 0) return null;
         return (
           <div key={cat.id}>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{cat.name}</p>
@@ -95,7 +144,7 @@ export function CatalogManager({ catalog }: { catalog: Catalog }) {
                     <TableHead>Billing</TableHead>
                     <TableHead>Default price</TableHead>
                     {catalog.tiers.map((t) => (
-                      <TableHead key={t.id} className={tierColorClasses(t.color).heading}>
+                      <TableHead key={t.id} className={`font-semibold ${tierColorClasses(t.color).heading}`}>
                         {t.name} price
                       </TableHead>
                     ))}

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { HelpTip } from "@/components/help-tip";
-import { generateMsa, sendMsaEmail } from "@/server/actions/msa";
+import { CountersignControl } from "@/components/countersign-control";
+import { generateMsa, sendMsaEmail, countersignMsa } from "@/server/actions/msa";
 import { toast } from "sonner";
 import { FileText, Link2, Download, Mail, CheckCircle2 } from "lucide-react";
 import type { quotes, contacts, msaDocuments } from "@/server/db/schema";
@@ -16,7 +17,17 @@ type Quote = InferSelectModel<typeof quotes>;
 type Contact = InferSelectModel<typeof contacts>;
 type MsaDocument = InferSelectModel<typeof msaDocuments>;
 
-export function MsaPanel({ quote, contact, document }: { quote: Quote; contact: Contact | null; document: MsaDocument | null }) {
+export function MsaPanel({
+  quote,
+  contact,
+  document,
+  currentUser,
+}: {
+  quote: Quote;
+  contact: Contact | null;
+  document: MsaDocument | null;
+  currentUser: { name: string; title: string | null } | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [email, setEmail] = useState(contact?.email ?? "");
@@ -79,7 +90,7 @@ export function MsaPanel({ quote, contact, document }: { quote: Quote; contact: 
       </p>
 
       {document && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {document.status === "SIGNED" ? (
             <Badge variant="success">
               <CheckCircle2 className="mr-1 h-3 w-3" /> Signed by {document.signedByName}
@@ -89,6 +100,17 @@ export function MsaPanel({ quote, contact, document }: { quote: Quote; contact: 
             <Badge variant="secondary">{document.status}</Badge>
           )}
         </div>
+      )}
+
+      {document && document.status === "SIGNED" && (
+        <CountersignControl
+          label="MSA"
+          countersign={(sig, name, title) => countersignMsa(document.id, sig, name, title)}
+          providerSignedAt={document.providerSignedAt}
+          providerSignedByName={document.providerSignedByName}
+          providerSignedByTitle={document.providerSignedByTitle}
+          currentUser={currentUser}
+        />
       )}
 
       <div className="flex flex-wrap gap-2">

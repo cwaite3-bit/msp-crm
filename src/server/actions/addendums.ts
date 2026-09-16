@@ -21,6 +21,7 @@ import {
   quoteEvents,
   msaDocuments,
   productCategories,
+  users,
 } from "@/server/db/schema";
 import { auth } from "@/auth";
 import { eq, asc, desc, and } from "drizzle-orm";
@@ -330,7 +331,121 @@ export async function renderAddendumDocumentPdf(addendumId: string): Promise<Buf
           signatureImageUrl: addendum.signatureImageUrl,
         }
       : null;
-  return renderAddendumPdf(content, signature);
+  const providerSignature: MsaSignatureInfo | null = addendum.providerSignedAt
+    ? {
+        signedByName: addendum.providerSignedByName || "",
+        signedByTitle: addendum.providerSignedByTitle,
+        signedAt: addendum.providerSignedAt.toISOString(),
+        signedIp: null,
+        signatureImageUrl: addendum.providerSignatureImageUrl,
+      }
+    : null;
+  return renderAddendumPdf(content, signature, providerSignature);
+}
+
+// Staff countersignature — mirrors countersignMsa in msa.ts exactly (see its
+// comment for the full "customer signs, then the account owner signs, then
+// both parties get the fully executed copy" rationale). Gated on the
+// customer having already signed the addendum; idempotent once
+// providerSignedAt is set.
+export async function countersignAddendum(
+  addendumId: string,
+  signatureImageDataUri?: string | null,
+  signedByName?: string,
+  signedByTitle?: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const sessionUser = await requireUser();
+    const [addendum] = await db.select().from(quoteAddendums).where(eq(quoteAddendums.id, addendumId)).limit(1);
+    if (!addendum) return { ok: false, error: "Addendum not found" };
+    if (addendum.status !== "SIGNED") {
+      return { ok: false, error: "The customer needs to sign this addendum before you can countersign it." };
+    }
+    if (addendum.providerSignedAt) return { ok: true };
+    if (signatureImageDataUri && !signatureImageDataUri.startsWith("data:image/")) {
+      return { ok: false, error: "Invalid signature image" };
+    }
+
+    const [staffUser] = await db.select().from(users).where(eq(users.id, sessionUser.id)).limit(1);
+    const name = (signedByName?.trim() || staffUser?.name || sessionUser.name || "").trim();
+    if (!name) return { ok: false, error: "Name is required" };
+    const title = signedByTitle?.trim() || staffUser?.title || null;
+
+    const providerSignedAt = new Date();
+
+    await db
+      .update(quoteAddendums)
+      .set({
+        providerSignedAt,
+        providerSignedByName: name,
+        providerSignedByTitle: title,
+        providerSignedByUserId: sessionUser.id,
+        providerSignatureImageUrl: signatureImageDataUri || null,
+      })
+      .where(eq(quoteAddendums.id, addendumId));
+
+    await db.insert(quoteEvents).values({
+      quoteId: addendum.quoteId,
+      type: "ADDENDUM_COUNTERSIGNED",
+      detail: `Addendum #${addendum.number} countersigned by ${name}`,
+    });
+
+    const content = addendum.content as AddendumContent;
+    const clientSignature: MsaSignatureInfo = {
+      signedByName: addendum.signedByName || "",
+      signedByTitle: addendum.signedByTitle,
+      signedAt: addendum.signedAt ? addendum.signedAt.toISOString() : new Date().toISOString(),
+      signedIp: addendum.signedIp,
+      signatureImageUrl: addendum.signatureImageUrl,
+    };
+    const providerSignature: MsaSignatureInfo = {
+      signedByName: name,
+      signedByTitle: title,
+      signedAt: providerSignedAt.toISOString(),
+      signedIp: null,
+      signatureImageUrl: signatureImageDataUri || null,
+    };
+
+    let fullyExecutedPdf: Buffer | null = null;
+    try {
+      fullyExecutedPdf = await renderAddendumPdf(content, clientSignature, providerSignature);
+    } catch (err) {
+      console.error(`countersignAddendum: failed to render fully-executed PDF for addendum ${addendumId}:`, err);
+    }
+
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, addendum.quoteId)).limit(1);
+    const contactEmail =
+      quote?.contactId ? (await db.select().from(contacts).where(eq(contacts.id, quote.contactId)).limit(1))[0]?.email ?? null : null;
+    const toCustomer = addendum.sentToEmail || contactEmail;
+    if (toCustomer && fullyExecutedPdf) {
+      try {
+        await sendEmail({
+          to: toCustomer,
+          subject: `Fully executed — Addendum No. ${addendum.number} (Quote #${content.quoteNumber})`,
+          html: `<p>Hi${content.contactName ? ` ${content.contactName}` : ""},</p>
+<p>Addendum No. ${addendum.number} to your Master Service Agreement (Quote #${content.quoteNumber}) has now been countersigned and is fully executed. Attached is your copy for your records.</p>`,
+          attachments: [{ filename: `Fully-Executed-Addendum-${addendum.number}-Quote-${content.quoteNumber}.pdf`, content: fullyExecutedPdf }],
+        });
+      } catch (err) {
+        console.error(`countersignAddendum: failed to email the customer's copy for addendum ${addendumId}:`, err);
+      }
+    }
+
+    await notifyQuoteCreator(
+      addendum.quoteId,
+      `Addendum #${addendum.number} fully executed — quote #${content.quoteNumber}`,
+      `<p>You countersigned Addendum No. ${addendum.number} for quote #${content.quoteNumber} — ${content.customerName}. It's now fully executed${toCustomer ? " and a copy has been emailed to the customer" : ""}.</p>
+<p><a href="${await appUrl()}/quotes/${addendum.quoteId}">Open the quote</a></p>`,
+      fullyExecutedPdf
+        ? [{ filename: `Fully-Executed-Addendum-${addendum.number}-Quote-${content.quoteNumber}.pdf`, content: fullyExecutedPdf }]
+        : undefined
+    );
+
+    revalidatePath(`/quotes/${addendum.quoteId}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not countersign the addendum" };
+  }
 }
 
 export async function sendAddendumEmail(addendumId: string, toEmail: string): Promise<{ ok: boolean; error?: string }> {

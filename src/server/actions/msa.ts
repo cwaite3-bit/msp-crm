@@ -1,13 +1,13 @@
 "use server";
 
 import { db } from "@/server/db";
-import { quotes, customers, contacts, serviceTiers, slas, quoteLineItems, msaDocuments, users } from "@/server/db/schema";
+import { quotes, customers, contacts, serviceTiers, slas, quoteLineItems, msaDocuments, quoteEvents, users } from "@/server/db/schema";
 import { auth } from "@/auth";
 import { eq, desc } from "drizzle-orm";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { buildMsaContent, type MsaContent } from "@/server/msa";
-import { renderMsaPdf } from "@/server/msa-pdf";
+import { renderMsaPdf, type MsaSignatureInfo } from "@/server/msa-pdf";
 import { getMsaSettingsPublic, getBillingSettingsPublic } from "@/server/actions/settings";
 import { sendEmail } from "@/server/email";
 import { notifyQuoteCreator, appUrl } from "@/server/notify";
@@ -256,7 +256,128 @@ export async function renderMsaDocumentPdf(docId: string): Promise<Buffer> {
           signatureImageUrl: doc.signatureImageUrl,
         }
       : null;
-  return renderMsaPdf(content, signature);
+  const providerSignature = doc.providerSignedAt
+    ? {
+        signedByName: doc.providerSignedByName || "",
+        signedByTitle: doc.providerSignedByTitle,
+        signedAt: doc.providerSignedAt.toISOString(),
+        signedIp: null,
+        signatureImageUrl: doc.providerSignatureImageUrl,
+      }
+    : null;
+  return renderMsaPdf(content, signature, providerSignature);
+}
+
+// Staff countersignature — the second half of the "customer signs, then the
+// account owner signs" flow the customer asked for, so a fully executed MSA
+// never has to be printed, hand-signed, and stored physically. Gated on the
+// customer having already signed (status === "SIGNED"); once
+// providerSignedAt is set this is a no-op (idempotent double-click guard),
+// matching signMsaPublic's own "already signed" short-circuit above.
+// Defaults the signer's name/title to the logged-in staff user's own
+// profile (users.name/title) when not passed explicitly, since in practice
+// this is almost always the account owner countersigning their own quote.
+export async function countersignMsa(
+  docId: string,
+  signatureImageDataUri?: string | null,
+  signedByName?: string,
+  signedByTitle?: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const sessionUser = await requireUser();
+    const [doc] = await db.select().from(msaDocuments).where(eq(msaDocuments.id, docId)).limit(1);
+    if (!doc) return { ok: false, error: "MSA not found" };
+    if (doc.status !== "SIGNED") {
+      return { ok: false, error: "The customer needs to sign this agreement before you can countersign it." };
+    }
+    if (doc.providerSignedAt) return { ok: true };
+    if (signatureImageDataUri && !signatureImageDataUri.startsWith("data:image/")) {
+      return { ok: false, error: "Invalid signature image" };
+    }
+
+    const [staffUser] = await db.select().from(users).where(eq(users.id, sessionUser.id)).limit(1);
+    const name = (signedByName?.trim() || staffUser?.name || sessionUser.name || "").trim();
+    if (!name) return { ok: false, error: "Name is required" };
+    const title = signedByTitle?.trim() || staffUser?.title || null;
+
+    const providerSignedAt = new Date();
+
+    await db
+      .update(msaDocuments)
+      .set({
+        providerSignedAt,
+        providerSignedByName: name,
+        providerSignedByTitle: title,
+        providerSignedByUserId: sessionUser.id,
+        providerSignatureImageUrl: signatureImageDataUri || null,
+      })
+      .where(eq(msaDocuments.id, docId));
+
+    await db.insert(quoteEvents).values({
+      quoteId: doc.quoteId,
+      type: "MSA_COUNTERSIGNED",
+      detail: `MSA countersigned by ${name}`,
+    });
+
+    const content = doc.content as MsaContent;
+    const clientSignature: MsaSignatureInfo = {
+      signedByName: doc.signedByName || "",
+      signedByTitle: doc.signedByTitle,
+      signedAt: doc.signedAt ? doc.signedAt.toISOString() : new Date().toISOString(),
+      signedIp: doc.signedIp,
+      signatureImageUrl: doc.signatureImageUrl,
+    };
+    const providerSignature: MsaSignatureInfo = {
+      signedByName: name,
+      signedByTitle: title,
+      signedAt: providerSignedAt.toISOString(),
+      signedIp: null,
+      signatureImageUrl: signatureImageDataUri || null,
+    };
+
+    // Best-effort fully-executed PDF, same "never lose the notification
+    // over a PDF render hiccup" reasoning as signMsaPublic above.
+    let fullyExecutedPdf: Buffer | null = null;
+    try {
+      fullyExecutedPdf = await renderMsaPdf(content, clientSignature, providerSignature);
+    } catch (err) {
+      console.error(`countersignMsa: failed to render fully-executed PDF for doc ${docId}:`, err);
+    }
+
+    // Email a copy to the customer directly (not just the staff-owner
+    // notification below) — the customer specifically asked that once both
+    // sides sign, "a copy is sent to both parties."
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, doc.quoteId)).limit(1);
+    const contactEmail =
+      quote?.contactId ? (await db.select().from(contacts).where(eq(contacts.id, quote.contactId)).limit(1))[0]?.email ?? null : null;
+    const toCustomer = doc.sentToEmail || contactEmail;
+    if (toCustomer && fullyExecutedPdf) {
+      try {
+        await sendEmail({
+          to: toCustomer,
+          subject: `Fully executed — Master Service Agreement (Quote #${content.quoteNumber})`,
+          html: `<p>Hi${content.contactName ? ` ${content.contactName}` : ""},</p>
+<p>Your Master Service Agreement for Quote #${content.quoteNumber} has now been countersigned by ${content.msaSettings.providerLegalName || "our team"} and is fully executed. Attached is your copy for your records.</p>`,
+          attachments: [{ filename: `Fully-Executed-MSA-Quote-${content.quoteNumber}.pdf`, content: fullyExecutedPdf }],
+        });
+      } catch (err) {
+        console.error(`countersignMsa: failed to email the customer's copy for doc ${docId}:`, err);
+      }
+    }
+
+    await notifyQuoteCreator(
+      doc.quoteId,
+      `MSA fully executed — quote #${content.quoteNumber}`,
+      `<p>You countersigned the Master Service Agreement for quote #${content.quoteNumber} — ${content.customerName}. It's now fully executed${toCustomer ? " and a copy has been emailed to the customer" : ""}.</p>
+<p><a href="${await appUrl()}/quotes/${doc.quoteId}">Open the quote</a></p>`,
+      fullyExecutedPdf ? [{ filename: `Fully-Executed-MSA-Quote-${content.quoteNumber}.pdf`, content: fullyExecutedPdf }] : undefined
+    );
+
+    revalidatePath(`/quotes/${doc.quoteId}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not countersign the MSA" };
+  }
 }
 
 // Returns a result object rather than throwing — see generateMsa above for
