@@ -34,6 +34,19 @@ export function applyDiscount(
   return Math.max(0, amount - discountValue);
 }
 
+// How much a discount actually took off a given subtotal — used to render
+// an explicit "Discount" line (rather than just a lower total with no
+// explanation of why) on both the staff quote builder and the client-
+// facing proposal page. Shares applyDiscount's own math, so this can never
+// disagree with what the discount actually did to the total.
+export function discountAmount(
+  amount: number,
+  discountType: "PERCENT" | "AMOUNT" | null | undefined,
+  discountValue: number | null | undefined
+): number {
+  return amount - applyDiscount(amount, discountType, discountValue);
+}
+
 export function computeQuoteTotals(
   items: LineItemLike[],
   opts: {

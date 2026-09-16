@@ -4,7 +4,7 @@ import { quotes, quoteLineItems, customers, contacts, serviceTiers, users } from
 import { eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { groupByCategory } from "@/server/pricing";
+import { discountAmount, groupByCategory } from "@/server/pricing";
 import { recordQuoteView } from "@/server/actions/quotes";
 import { getRateCardPublic, getScopeMatrixPublic, getM365PlansPublic, getBillingSettingsPublic } from "@/server/actions/settings";
 import { getSlaPublic } from "@/server/actions/slas";
@@ -61,6 +61,20 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
   const discountPct = quote.discountType === "PERCENT" && quote.discountValue ? Number(quote.discountValue) / 100 : 0;
   const allTiers = computeAllTiers({ quantities, risk, addOns, rateCard, discountPct, waiveMinimumMrr: quote.waiveMinimumMrr, m365Plans });
+
+  // Called out as its own line in the totals box below rather than folded
+  // silently into a lower "Monthly total" — a customer should be able to
+  // see plainly that a discount was applied, not just infer it.
+  const hasDiscount = Boolean(quote.discountType && quote.discountValue);
+  const discountValueNum = quote.discountValue ? Number(quote.discountValue) : null;
+  const discountedMonthly = hasDiscount
+    ? discountAmount(Number(quote.subtotalMonthly), quote.discountType as "PERCENT" | "AMOUNT" | null, discountValueNum)
+    : 0;
+  const discountedOneTime = hasDiscount
+    ? discountAmount(Number(quote.subtotalOneTime), quote.discountType as "PERCENT" | "AMOUNT" | null, discountValueNum)
+    : 0;
+  const discountLabel =
+    quote.discountType === "PERCENT" ? `${discountValueNum}% discount applied` : `${formatCurrency(discountValueNum ?? 0)} discount applied`;
   const recommendedTier = computeRecommendedTier({ risk, users: quantities.users, vcioEnabled: addOns.vcioEnabled });
 
   let selectedTierKey = null as ReturnType<typeof tierKeyFromName>;
@@ -192,6 +206,15 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
 
           {/* Totals */}
           <div className="mt-8 overflow-hidden rounded-lg bg-[#024996] text-white">
+            {hasDiscount && (
+              <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-6 py-2.5">
+                <span className="text-sm font-medium text-emerald-300">{discountLabel}</span>
+                <span className="text-sm font-medium text-emerald-300">
+                  −{formatCurrency(discountedMonthly)}
+                  {discountedOneTime > 0 ? ` / −${formatCurrency(discountedOneTime)} one-time` : ""}
+                </span>
+              </div>
+            )}
             {quote.billingFrequency === "ANNUAL" ? (
               <div className="flex items-center justify-between px-6 py-4">
                 <span className="text-sm font-medium text-slate-300">

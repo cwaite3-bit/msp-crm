@@ -26,7 +26,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { HelpTip } from "@/components/help-tip";
 import { LineItemDescription } from "./line-item-description";
 import { formatCurrency } from "@/lib/utils";
-import { computeQuoteTotals, groupByCategory } from "@/server/pricing";
+import { computeQuoteTotals, discountAmount, groupByCategory } from "@/server/pricing";
 import {
   addLineItemFromProduct,
   addCustomLineItem,
@@ -67,15 +67,26 @@ export function QuoteBuilder({
     setItems(lineItems);
   }, [lineItems]);
 
+  const discountType = quote.discountType as "PERCENT" | "AMOUNT" | null;
+  const discountValue = quote.discountValue ? Number(quote.discountValue) : null;
+
   const totals = useMemo(
     () =>
       computeQuoteTotals(items, {
-        discountType: quote.discountType as "PERCENT" | "AMOUNT" | null,
-        discountValue: quote.discountValue ? Number(quote.discountValue) : null,
+        discountType,
+        discountValue,
         taxRatePct: quote.taxRatePct ? Number(quote.taxRatePct) : null,
       }),
-    [items, quote.discountType, quote.discountValue, quote.taxRatePct]
+    [items, discountType, discountValue, quote.taxRatePct]
   );
+
+  // Shown as its own line (not just folded into a smaller total) so staff
+  // can never miss that a discount is on this quote — see quote-meta-form
+  // for where discountType/discountValue actually get set.
+  const hasDiscount = Boolean(discountType && discountValue);
+  const discountLabel = discountType === "PERCENT" ? `${discountValue}% discount` : `${formatCurrency(discountValue ?? 0)} discount`;
+  const discountedMonthly = hasDiscount ? discountAmount(totals.subtotalMonthly, discountType, discountValue) : 0;
+  const discountedOneTime = hasDiscount ? discountAmount(totals.subtotalOneTime, discountType, discountValue) : 0;
 
   const grouped = groupByCategory(items);
   const readOnly = quote.status === "ACCEPTED" || quote.status === "REJECTED";
@@ -232,6 +243,15 @@ export function QuoteBuilder({
           <span>One-time subtotal</span>
           <span>{formatCurrency(totals.subtotalOneTime)}</span>
         </div>
+        {hasDiscount && (
+          <div className="flex w-64 justify-between text-amber-700">
+            <span>{discountLabel}</span>
+            <span>
+              −{formatCurrency(discountedMonthly)}
+              {discountedOneTime > 0 ? ` / −${formatCurrency(discountedOneTime)} one-time` : ""}
+            </span>
+          </div>
+        )}
         <div className="flex w-64 justify-between text-lg font-semibold text-slate-900">
           <span>Monthly total</span>
           <span>{formatCurrency(totals.totalMonthly)}</span>
