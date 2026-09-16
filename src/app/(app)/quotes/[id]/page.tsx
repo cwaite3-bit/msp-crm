@@ -100,7 +100,11 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             </div>
             <p className="text-sm text-slate-500">Created {formatDate(quote.createdAt)}</p>
           </div>
-          <QuoteActions quote={quote} msaSigned={msaDocument?.status === "SIGNED"} />
+          <QuoteActions
+            quote={quote}
+            msaSigned={msaDocument?.status === "SIGNED"}
+            contact={customerContacts.find((c) => c.id === quote.contactId) ?? null}
+          />
         </div>
       </div>
 

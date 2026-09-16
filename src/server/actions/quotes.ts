@@ -590,6 +590,29 @@ export async function setQuoteStatus(quoteId: string, status: "DRAFT" | "SENT" |
   }
 }
 
+// Re-emails the quote's link to its contact without touching status —
+// for a quote that's already past DRAFT (SENT/VIEWED/ACCEPTED/REJECTED/
+// EXPIRED) and the customer needs the link again (lost the email, asked
+// for it again, staff wants to nudge them). Deliberately does NOT call
+// setQuoteStatus / flip the quote back to SENT — resending an already-
+// accepted or already-rejected quote shouldn't rewrite its history as if
+// it were newly sent. Logs a SENT quote event (detail: "Resent to
+// customer") so the audit trail shows it happened, same event type the
+// original send uses, just distinguishable by its detail text. Returns a
+// result object rather than throwing, same reasoning as resetQuote/
+// pushQuoteToQuickBooks — this needs to surface "no contact email on
+// file" etc. back to the button, not an opaque digest.
+export async function resendQuoteEmail(quoteId: string): Promise<{ ok: boolean; error?: string }> {
+  await requireUser();
+  const result = await notifyCustomerQuoteSent(quoteId);
+  if (!result.sent) {
+    return { ok: false, error: result.error || "Could not resend this quote" };
+  }
+  await db.insert(quoteEvents).values({ quoteId, type: "SENT", detail: "Resent to customer" });
+  revalidatePath(`/quotes/${quoteId}`);
+  return { ok: true };
+}
+
 // Wipes a quote back to blank so staff can redo it from scratch, without
 // losing its quote number, customer/contact, or public link. Clears
 // Discovery (quantities/riskFactors), add-ons, every line item (both

@@ -4,26 +4,47 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Send, Link2, ExternalLink, Trash2, ReceiptText, RotateCcw } from "lucide-react";
-import { setQuoteStatus, deleteQuote, resetQuote } from "@/server/actions/quotes";
+import { setQuoteStatus, deleteQuote, resetQuote, resendQuoteEmail } from "@/server/actions/quotes";
 import { pushQuoteToQuickBooks } from "@/server/actions/quickbooks";
 import { toast } from "sonner";
-import type { quotes } from "@/server/db/schema";
+import type { quotes, contacts } from "@/server/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
 
 type Quote = InferSelectModel<typeof quotes>;
+type Contact = InferSelectModel<typeof contacts>;
 
-export function QuoteActions({ quote, msaSigned }: { quote: Quote; msaSigned: boolean }) {
+export function QuoteActions({
+  quote,
+  msaSigned,
+  contact,
+}: {
+  quote: Quote;
+  msaSigned: boolean;
+  contact: Contact | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   const publicUrl = typeof window !== "undefined" ? `${window.location.origin}/q/${quote.publicToken}` : `/q/${quote.publicToken}`;
+  const recipientLabel = contact
+    ? `${contact.firstName} ${contact.lastName}${contact.email ? ` <${contact.email}>` : " (no email on file)"}`
+    : "no contact selected on this quote";
 
   function copyLink() {
     navigator.clipboard.writeText(publicUrl);
     toast.success("Client link copied");
   }
 
+  // Emailing the customer is a one-way action — there's no "unsend" — so
+  // this asks for an explicit confirmation naming exactly who it's about
+  // to email, the same way "Delete" and "Start over" below already do.
   function send() {
+    if (
+      !confirm(
+        `Send quote #${quote.quoteNumber} to ${recipientLabel} now? This emails them a link to view, accept, or decline this quote, and moves it out of Draft status. This cannot be undone.`
+      )
+    )
+      return;
     startTransition(async () => {
       const result = await setQuoteStatus(quote.id, "SENT");
       router.refresh();
@@ -32,6 +53,25 @@ export function QuoteActions({ quote, msaSigned }: { quote: Quote; msaSigned: bo
       } else {
         toast.success("Marked as sent");
         if (result?.emailError) toast.error(`Email not sent: ${result.emailError}`);
+      }
+    });
+  }
+
+  // For a quote that's already past Draft — the customer lost the email,
+  // asked for it again, or staff wants to nudge them. Deliberately doesn't
+  // touch the quote's status (see resendQuoteEmail's own comment).
+  function resend() {
+    if (
+      !confirm(`Re-send quote #${quote.quoteNumber} to ${recipientLabel} now? This emails them the same client link again.`)
+    )
+      return;
+    startTransition(async () => {
+      const result = await resendQuoteEmail(quote.id);
+      if (result.ok) {
+        toast.success("Quote re-sent to the customer");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not resend this quote");
       }
     });
   }
@@ -99,6 +139,17 @@ export function QuoteActions({ quote, msaSigned }: { quote: Quote; msaSigned: bo
       {quote.status === "DRAFT" && (
         <Button size="sm" onClick={send} disabled={pending}>
           <Send className="h-4 w-4" /> Mark as sent
+        </Button>
+      )}
+      {quote.status !== "DRAFT" && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={resend}
+          disabled={pending}
+          title={`Re-send this quote's link to ${recipientLabel}`}
+        >
+          <Send className="h-4 w-4" /> Resend to customer
         </Button>
       )}
       {quote.status === "ACCEPTED" && !quote.quickbooksInvoiceId && (
