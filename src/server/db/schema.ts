@@ -173,6 +173,14 @@ export const serviceTiers = pgTable("service_tiers", {
   sortOrder: integer("sort_order").notNull().default(0),
   isDefault: boolean("is_default").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // A key into TIER_COLOR_CLASSES (src/lib/tier-colors.ts), e.g. "amber" —
+  // never a raw hex value, so the Catalog page's color-coded badges/column
+  // headings can always render from a small fixed set of pre-built,
+  // accessible Tailwind class strings rather than generating classes
+  // dynamically (which Tailwind can't statically detect/ship). Nullable —
+  // an unset or unrecognized value just falls back to the default neutral
+  // color rather than erroring.
+  color: text("color"),
 });
 
 export const billingTypeEnum = pgEnum("billing_type", [

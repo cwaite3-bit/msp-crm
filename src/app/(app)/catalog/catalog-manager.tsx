@@ -21,8 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Archive, Pencil } from "lucide-react";
+import { Plus, Archive, Pencil, GripVertical, Palette } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   createProduct,
@@ -30,11 +29,14 @@ import {
   archiveProduct,
   createCategory,
   createTier,
+  updateTierColor,
+  reorderTiers,
   setTierPrice,
   clearTierPrice,
 } from "@/server/actions/catalog";
 import { toast } from "sonner";
 import type { listCatalog } from "@/server/actions/catalog";
+import { TIER_COLOR_KEYS, TIER_COLOR_LABELS, tierColorClasses, type TierColorKey } from "@/lib/tier-colors";
 
 type Catalog = Awaited<ReturnType<typeof listCatalog>>;
 
@@ -73,79 +75,79 @@ export function CatalogManager({ catalog }: { catalog: Catalog }) {
         <QuickAddTier />
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {catalog.tiers.map((t) => (
-          <Badge key={t.id} variant="outline">
-            {t.name}
-            {t.isDefault && " (default)"}
-          </Badge>
-        ))}
-      </div>
+      <ServiceTierBadges tiers={catalog.tiers} />
 
       {catalog.categories.map((cat) => {
         const catProducts = catalog.products.filter((p) => p.categoryId === cat.id);
-        if (catProducts.length === 0) return null;
         return (
           <div key={cat.id}>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{cat.name}</p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>Billing</TableHead>
-                  <TableHead>Default price</TableHead>
-                  {catalog.tiers.map((t) => (
-                    <TableHead key={t.id}>{t.name} price</TableHead>
-                  ))}
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {catProducts.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium text-slate-900">{p.name}</TableCell>
-                    <TableCell className="text-slate-500">{p.unitLabel}</TableCell>
-                    <TableCell className="text-slate-500">
-                      {p.billingType === "RECURRING_MONTHLY" ? "Monthly" : p.billingType === "ONE_TIME" ? "One-time" : "Hourly"}
-                    </TableCell>
-                    <TableCell>{formatCurrency(p.defaultUnitPrice)}</TableCell>
-                    {catalog.tiers.map((t) => {
-                      const tp = catalog.tierPrices.find((x) => x.productId === p.id && x.tierId === t.id);
-                      return (
-                        <TableCell key={t.id}>
-                          <TierPriceInput
-                            productId={p.id}
-                            tierId={t.id}
-                            value={tp?.unitPrice ?? ""}
-                          />
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => setEditing(p)}>
-                          <Pencil className="h-4 w-4 text-slate-400" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={pending}
-                          onClick={() =>
-                            startTransition(async () => {
-                              await archiveProduct(p.id);
-                              router.refresh();
-                            })
-                          }
-                        >
-                          <Archive className="h-4 w-4 text-slate-400" />
-                        </Button>
-                      </div>
-                    </TableCell>
+            {catProducts.length === 0 ? (
+              <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+                No products in this category yet — add one with &ldquo;New product/service&rdquo; above.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Billing</TableHead>
+                    <TableHead>Default price</TableHead>
+                    {catalog.tiers.map((t) => (
+                      <TableHead key={t.id} className={tierColorClasses(t.color).heading}>
+                        {t.name} price
+                      </TableHead>
+                    ))}
+                    <TableHead />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {catProducts.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium text-slate-900">{p.name}</TableCell>
+                      <TableCell className="text-slate-500">{p.unitLabel}</TableCell>
+                      <TableCell className="text-slate-500">
+                        {p.billingType === "RECURRING_MONTHLY" ? "Monthly" : p.billingType === "ONE_TIME" ? "One-time" : "Hourly"}
+                      </TableCell>
+                      <TableCell>{formatCurrency(p.defaultUnitPrice)}</TableCell>
+                      {catalog.tiers.map((t) => {
+                        const tp = catalog.tierPrices.find((x) => x.productId === p.id && x.tierId === t.id);
+                        return (
+                          <TableCell key={t.id}>
+                            <TierPriceInput
+                              productId={p.id}
+                              tierId={t.id}
+                              value={tp?.unitPrice ?? ""}
+                            />
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => setEditing(p)}>
+                            <Pencil className="h-4 w-4 text-slate-400" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={pending}
+                            onClick={() =>
+                              startTransition(async () => {
+                                await archiveProduct(p.id);
+                                router.refresh();
+                              })
+                            }
+                          >
+                            <Archive className="h-4 w-4 text-slate-400" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
         );
       })}
@@ -298,6 +300,137 @@ function ProductForm({
   );
 }
 
+// The row of service-tier badges at the top of the Catalog page. Each
+// badge is draggable (native HTML5 drag-and-drop — no extra dependency)
+// to reorder the tiers, which also reorders their "<Tier> price" columns
+// in every product table below (both read `catalog.tiers`, already sorted
+// by `sortOrder`). A small palette button on each badge lets staff assign
+// it a color, which the matching price column heading also picks up (see
+// `tierColorClasses` — same color key, same lookup, everywhere a tier is
+// shown).
+function ServiceTierBadges({ tiers }: { tiers: Catalog["tiers"] }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [colorPickerFor, setColorPickerFor] = useState<Catalog["tiers"][number] | null>(null);
+
+  function handleDrop(targetId: string) {
+    setDragOverId(null);
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      return;
+    }
+    const ids = tiers.map((t) => t.id);
+    const fromIndex = ids.indexOf(dragId);
+    const toIndex = ids.indexOf(targetId);
+    setDragId(null);
+    if (fromIndex === -1 || toIndex === -1) return;
+    const reordered = [...ids];
+    reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, dragId);
+    startTransition(async () => {
+      const result = await reorderTiers(reordered);
+      if (!result.ok) toast.error(result.error || "Could not reorder tiers");
+      router.refresh();
+    });
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {tiers.map((t) => {
+          const colors = tierColorClasses(t.color);
+          return (
+            <div
+              key={t.id}
+              draggable
+              onDragStart={() => setDragId(t.id)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (dragOverId !== t.id) setDragOverId(t.id);
+              }}
+              onDragLeave={() => setDragOverId((cur) => (cur === t.id ? null : cur))}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDrop(t.id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setDragOverId(null);
+              }}
+              className={`group flex cursor-grab items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium active:cursor-grabbing ${colors.badge} ${
+                dragOverId === t.id && dragId && dragId !== t.id ? "ring-2 ring-offset-1" : ""
+              } ${pending ? "opacity-60" : ""}`}
+              title="Drag to reorder"
+            >
+              <GripVertical className="h-3 w-3 opacity-40" />
+              <span>
+                {t.name}
+                {t.isDefault && " (default)"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setColorPickerFor(t)}
+                className="opacity-0 transition-opacity group-hover:opacity-100"
+                title="Change color"
+              >
+                <Palette className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <Dialog open={!!colorPickerFor} onOpenChange={(o) => !o && setColorPickerFor(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Color for &ldquo;{colorPickerFor?.name}&rdquo;</DialogTitle>
+          </DialogHeader>
+          {colorPickerFor && (
+            <ColorSwatchPicker
+              value={colorPickerFor.color}
+              onChange={(color) => {
+                const tier = colorPickerFor;
+                setColorPickerFor(null);
+                startTransition(async () => {
+                  await updateTierColor(tier.id, color);
+                  router.refresh();
+                });
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ColorSwatchPicker({ value, onChange }: { value: string | null; onChange: (color: TierColorKey) => void }) {
+  return (
+    <div className="grid grid-cols-5 gap-2">
+      {TIER_COLOR_KEYS.map((key) => {
+        const colors = tierColorClasses(key);
+        const selected = value === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            title={TIER_COLOR_LABELS[key]}
+            className={`flex flex-col items-center gap-1 rounded-md border p-2 text-[11px] text-slate-600 hover:bg-slate-50 ${
+              selected ? "border-slate-400 ring-2 ring-slate-300" : "border-slate-200"
+            }`}
+          >
+            <span className={`h-5 w-5 rounded-full ${colors.dot}`} />
+            {TIER_COLOR_LABELS[key]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function QuickAddCategory() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -341,6 +474,7 @@ function QuickAddTier() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [color, setColor] = useState<TierColorKey | null>(null);
   const [pending, startTransition] = useTransition();
 
   return (
@@ -357,17 +491,22 @@ function QuickAddTier() {
         <div className="flex flex-col gap-3">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Platinum" />
           <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description shown to staff" />
+          <div className="flex flex-col gap-1.5">
+            <Label>Color (optional — picks one automatically if you skip this)</Label>
+            <ColorSwatchPicker value={color} onChange={setColor} />
+          </div>
         </div>
         <DialogFooter>
           <Button
             disabled={pending || !name.trim()}
             onClick={() =>
               startTransition(async () => {
-                await createTier(name, description);
+                await createTier(name, description, color ?? undefined);
                 router.refresh();
                 setOpen(false);
                 setName("");
                 setDescription("");
+                setColor(null);
               })
             }
           >

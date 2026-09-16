@@ -78,6 +78,13 @@
       "when": 1789520973995,
       "tag": "0010_add_ai_quote_review",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789524014761,
+      "tag": "0011_add_tier_color",
+      "breakpoints": true
     }
   ]
 }

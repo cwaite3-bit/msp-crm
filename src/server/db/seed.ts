@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { db } from "./index";
 import { users, productCategories, serviceTiers, products, productTierPrices, appSettings, slas } from "./schema";
 import { eq } from "drizzle-orm";
+import type { TierColorKey } from "../../lib/tier-colors";
 import {
   DEFAULT_RATE_CARD,
   DEFAULT_SCOPE_MATRIX,
@@ -32,10 +33,16 @@ async function upsertCategory(name: string, sortOrder: number) {
   return row;
 }
 
-async function upsertTier(name: string, description: string, sortOrder: number, isDefault = false) {
+async function upsertTier(
+  name: string,
+  description: string,
+  sortOrder: number,
+  isDefault = false,
+  color?: TierColorKey,
+) {
   const existing = await db.select().from(serviceTiers).where(eq(serviceTiers.name, name)).limit(1);
   if (existing[0]) return existing[0];
-  const [row] = await db.insert(serviceTiers).values({ name, description, sortOrder, isDefault }).returning();
+  const [row] = await db.insert(serviceTiers).values({ name, description, sortOrder, isDefault, color }).returning();
   return row;
 }
 
@@ -145,9 +152,15 @@ async function main() {
   // Bronze/Silver/Gold, matching the Lockdown IT quote-builder spreadsheet's
   // plans. Silver is the default for a new quote — it's the workbook's own
   // "usual" example scenario.
-  const good = await upsertTier("Bronze", "Managed Foundation — business hours support, standard priority", 0);
-  const better = await upsertTier("Silver", "Managed Complete — unlimited qualifying help desk, priority response", 1, true);
-  const best = await upsertTier("Gold", "Managed Premier — highest priority, vCIO strategic allowance", 2);
+  const good = await upsertTier("Bronze", "Managed Foundation — business hours support, standard priority", 0, false, "orange");
+  const better = await upsertTier(
+    "Silver",
+    "Managed Complete — unlimited qualifying help desk, priority response",
+    1,
+    true,
+    "slate",
+  );
+  const best = await upsertTier("Gold", "Managed Premier — highest priority, vCIO strategic allowance", 2, false, "amber");
 
   console.log("Seeding product categories…");
   const support = await upsertCategory("Support", 0);

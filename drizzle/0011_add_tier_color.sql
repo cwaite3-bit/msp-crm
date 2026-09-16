@@ -1,0 +1,1 @@
+ALTER TABLE "service_tiers" ADD COLUMN "color" text;

@@ -5,6 +5,7 @@ import { productCategories, serviceTiers, products, productTierPrices } from "@/
 import { auth } from "@/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { TIER_COLOR_KEYS, DEFAULT_TIER_COLOR, type TierColorKey } from "@/lib/tier-colors";
 
 async function requireUser() {
   const session = await auth();
@@ -38,14 +39,62 @@ export async function createCategory(name: string) {
 
 // ---- Service tiers ----
 
-export async function createTier(name: string, description?: string) {
+function isTierColorKey(value: string): value is TierColorKey {
+  return (TIER_COLOR_KEYS as readonly string[]).includes(value);
+}
+
+export async function createTier(name: string, description?: string, color?: string) {
   await requireUser();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Tier name is required");
-  const [row] = await db.insert(serviceTiers).values({ name: trimmed, description }).returning();
+
+  // New tiers sort to the end and pick the next unused color in rotation
+  // by default (so a freshly created tier is already color-coded, not
+  // left gray until someone remembers to set it) — but staff can override
+  // right there in the "New service tier" dialog.
+  const existingTiers = await db.select().from(serviceTiers);
+  const nextSortOrder = existingTiers.length
+    ? Math.max(...existingTiers.map((t) => t.sortOrder)) + 1
+    : 0;
+  const resolvedColor =
+    color && isTierColorKey(color) ? color : TIER_COLOR_KEYS[existingTiers.length % TIER_COLOR_KEYS.length];
+
+  const [row] = await db
+    .insert(serviceTiers)
+    .values({ name: trimmed, description, color: resolvedColor, sortOrder: nextSortOrder })
+    .returning();
   revalidatePath("/catalog");
   revalidatePath("/quotes");
   return row;
+}
+
+export async function updateTierColor(tierId: string, color: string) {
+  await requireUser();
+  const resolvedColor = isTierColorKey(color) ? color : DEFAULT_TIER_COLOR;
+  await db.update(serviceTiers).set({ color: resolvedColor }).where(eq(serviceTiers.id, tierId));
+  revalidatePath("/catalog");
+  revalidatePath("/quotes");
+}
+
+// Persists a full new left-to-right order for every tier at once (from
+// drag-and-drop reordering on the Catalog page) — `orderedIds` must be
+// exactly the current set of tier IDs, just reshuffled, so a stray or
+// missing ID (e.g. a tier deleted by someone else mid-drag) is rejected
+// rather than silently reassigning sort order to the wrong tiers.
+export async function reorderTiers(orderedIds: string[]): Promise<{ ok: boolean; error?: string }> {
+  await requireUser();
+  const currentTiers = await db.select().from(serviceTiers);
+  const currentIds = new Set(currentTiers.map((t) => t.id));
+  const sameSet = orderedIds.length === currentIds.size && orderedIds.every((id) => currentIds.has(id));
+  if (!sameSet) {
+    return { ok: false, error: "The tier list changed — refresh and try again." };
+  }
+  await Promise.all(
+    orderedIds.map((id, index) => db.update(serviceTiers).set({ sortOrder: index }).where(eq(serviceTiers.id, id))),
+  );
+  revalidatePath("/catalog");
+  revalidatePath("/quotes");
+  return { ok: true };
 }
 
 // ---- Products ----
