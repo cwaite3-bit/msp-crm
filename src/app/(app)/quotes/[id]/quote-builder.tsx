@@ -24,6 +24,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2 } from "lucide-react";
 import { HelpTip } from "@/components/help-tip";
+import { LineItemDescription } from "./line-item-description";
 import { formatCurrency } from "@/lib/utils";
 import { computeQuoteTotals, groupByCategory } from "@/server/pricing";
 import {
@@ -147,7 +148,7 @@ export function QuoteBuilder({
                       )}
                     </div>
                     {readOnly ? (
-                      item.description && <div className="whitespace-pre-wrap text-xs text-slate-500">{item.description}</div>
+                      item.description && <LineItemDescription text={item.description} />
                     ) : (
                       <div className="mt-1 flex items-start gap-1">
                         <Textarea

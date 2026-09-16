@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { HelpTip } from "@/components/help-tip";
+import { LineItemDescription } from "./line-item-description";
 import { formatCurrency } from "@/lib/utils";
 import { computeSubtotals, groupByCategory } from "@/server/pricing";
 import {
@@ -67,6 +68,10 @@ const STATUS_VARIANT: Record<string, "secondary" | "success" | "warning" | "dest
   SIGNED: "success",
   DECLINED: "destructive",
 };
+
+// LineItemDescription (collapsible long-description-with-toggle) now lives
+// in ./line-item-description.tsx, shared with quote-builder.tsx's
+// read-only line items view — see that file's comment for why.
 
 export function AddendumsPanel({
   quoteId,
@@ -315,51 +320,72 @@ function AddendumCard({
         grouped.map((group) => (
           <div key={group.categoryName}>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">{group.categoryName}</p>
-            <Table>
+            <Table className={editable ? "table-fixed" : undefined}>
               <TableBody>
-                {group.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="w-[45%]">
-                      <span className="font-medium text-slate-900">{item.name}</span>
-                      {item.description && <div className="whitespace-pre-wrap text-xs text-slate-500">{item.description}</div>}
-                    </TableCell>
-                    <TableCell className="w-24">
-                      <Input
-                        type="number"
-                        min={0}
-                        step="1"
-                        value={item.quantity}
-                        disabled={!editable}
-                        onChange={(e) => onQuantityChange(item, e.target.value)}
-                        className="h-8"
-                      />
-                      <div className="mt-0.5 text-[11px] text-slate-400">{item.unitLabel}</div>
-                    </TableCell>
-                    <TableCell className="w-32">
-                      <div className="flex items-center gap-1">
-                        <span className="text-slate-400">$</span>
+                {group.items.map((item) =>
+                  editable ? (
+                    <TableRow key={item.id}>
+                      <TableCell className="w-[45%]">
+                        <span className="font-medium text-slate-900">{item.name}</span>
+                        {item.description && <LineItemDescription text={item.description} />}
+                      </TableCell>
+                      <TableCell className="w-24">
                         <Input
                           type="number"
                           min={0}
-                          step="0.01"
-                          value={item.unitPrice}
-                          disabled={!editable}
-                          onChange={(e) => onPriceChange(item, e.target.value)}
+                          step="1"
+                          value={item.quantity}
+                          onChange={(e) => onQuantityChange(item, e.target.value)}
                           className="h-8"
                         />
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-slate-400">{BILLING_LABEL[item.billingType]}</div>
-                    </TableCell>
-                    <TableCell className="w-24 text-right font-medium">{formatCurrency(item.lineTotal)}</TableCell>
-                    <TableCell className="w-10">
-                      {editable && (
+                        <div className="mt-0.5 text-[11px] text-slate-400">{item.unitLabel}</div>
+                      </TableCell>
+                      <TableCell className="w-32">
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-400">$</span>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={(e) => onPriceChange(item, e.target.value)}
+                            className="h-8"
+                          />
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-slate-400">{BILLING_LABEL[item.billingType]}</div>
+                      </TableCell>
+                      <TableCell className="w-24 text-right font-medium">{formatCurrency(item.lineTotal)}</TableCell>
+                      <TableCell className="w-10">
                         <Button variant="ghost" size="icon" onClick={() => onRemoveItem(item)} disabled={pending}>
                           <Trash2 className="h-4 w-4 text-slate-400" />
                         </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    // Once an addendum is no longer a draft its quantity/
+                    // price are locked in — showing them as full-size,
+                    // disabled input boxes was wasting most of the row's
+                    // width on controls nobody can use, which is exactly
+                    // what left almost no room for the description column.
+                    // Plain text here gives that room back.
+                    <TableRow key={item.id}>
+                      <TableCell className="w-[60%] align-top">
+                        <span className="font-medium text-slate-900">{item.name}</span>
+                        {item.description && <LineItemDescription text={item.description} />}
+                      </TableCell>
+                      <TableCell className="w-20 align-top text-xs text-slate-600">
+                        {item.quantity} {item.unitLabel}
+                      </TableCell>
+                      <TableCell className="w-20 align-top text-xs text-slate-600">
+                        {formatCurrency(item.unitPrice)}
+                        {BILLING_LABEL[item.billingType] ? ` ${BILLING_LABEL[item.billingType]}` : ""}
+                      </TableCell>
+                      <TableCell className="w-20 align-top text-right text-xs font-medium text-slate-900">
+                        {formatCurrency(item.lineTotal)}
+                      </TableCell>
+                    </TableRow>
+                  ),
+                )}
               </TableBody>
             </Table>
           </div>
