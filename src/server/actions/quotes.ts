@@ -571,12 +571,31 @@ export async function repriceForTier(quoteId: string) {
   revalidatePath(`/quotes/${quoteId}`);
 }
 
-export async function setQuoteStatus(quoteId: string, status: "DRAFT" | "SENT" | "REJECTED") {
+export async function setQuoteStatus(
+  quoteId: string,
+  status: "DRAFT" | "SENT" | "REJECTED",
+  options?: {
+    // An optional personal note staff types into the "Mark as sent" dialog,
+    // included in the body of the email the customer receives — entirely
+    // optional, nothing changes if it's left blank. Only meaningful when
+    // status === "SENT"; ignored otherwise.
+    message?: string;
+  }
+) {
   await requireUser();
+  const trimmedMessage = status === "SENT" ? options?.message?.trim() || null : null;
   const patch: Record<string, unknown> = { status, updatedAt: new Date() };
   if (status === "SENT") patch.sentAt = new Date();
   await db.update(quotes).set(patch).where(eq(quotes.id, quoteId));
-  await db.insert(quoteEvents).values({ quoteId, type: status === "SENT" ? "SENT" : "REJECTED" });
+  // Logging the note's own text (not just that one existed) on the SENT
+  // event keeps a durable record of what the customer was actually told,
+  // even though it isn't stored on the quote itself — same "detail" free-
+  // text field resendQuoteEmail already uses for "Resent to customer".
+  await db.insert(quoteEvents).values({
+    quoteId,
+    type: status === "SENT" ? "SENT" : "REJECTED",
+    detail: trimmedMessage ? `Note included: "${trimmedMessage}"` : null,
+  });
   revalidatePath(`/quotes/${quoteId}`);
 
   // Marking a quote Sent is also what actually emails the client their
@@ -585,7 +604,7 @@ export async function setQuoteStatus(quoteId: string, status: "DRAFT" | "SENT" |
   // the result (rather than throwing) so the button can tell staff whether
   // it actually went out without blocking the status change itself.
   if (status === "SENT") {
-    const result = await notifyCustomerQuoteSent(quoteId);
+    const result = await notifyCustomerQuoteSent(quoteId, trimmedMessage || undefined);
     return { emailSent: result.sent, emailError: result.error };
   }
 }

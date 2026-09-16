@@ -109,7 +109,7 @@ export async function notifyQuoteCreator(
   }
 }
 
-export async function notifyCustomerQuoteSent(quoteId: string): Promise<{ sent: boolean; error?: string }> {
+export async function notifyCustomerQuoteSent(quoteId: string, message?: string): Promise<{ sent: boolean; error?: string }> {
   const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
   if (!quote) return { sent: false, error: "Quote not found" };
 
@@ -133,12 +133,24 @@ export async function notifyCustomerQuoteSent(quoteId: string): Promise<{ sent: 
   const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
   const url = `${await appUrl()}/q/${quote.publicToken}`;
 
+  // The optional note staff typed into the "Mark as sent" dialog — never
+  // required, so this whole block is skipped entirely when blank. Escaped
+  // the same as every other staff/user-supplied string that ends up in an
+  // email body (see escapeHtml above), and `white-space:pre-wrap` so line
+  // breaks the sender typed are preserved without needing to convert them
+  // to <br> tags by hand.
+  const trimmedMessage = message?.trim();
+  const messageHtml = trimmedMessage
+    ? `<div style="margin:16px 0;padding:12px 16px;background:#f8fafc;border-left:3px solid #10b981;border-radius:4px;"><p style="margin:0;white-space:pre-wrap;color:#0f172a;">${escapeHtml(trimmedMessage)}</p></div>`
+    : "";
+
   try {
     await sendEmail({
       to: contact.email,
       subject: `Your quote from Lockdown IT — #${quote.quoteNumber}${quote.title ? `: ${quote.title}` : ""}`,
       html: `<p>Hi${contact.firstName ? ` ${contact.firstName}` : ""},</p>
 <p>Your IT services quote${quote.title ? ` — "${quote.title}"` : ""} is ready to review${customer ? ` for ${customer.name}` : ""}.</p>
+${messageHtml}
 <p><a href="${url}">View and respond to your quote</a></p>
 <p>Reply to this email if you have any questions.</p>`,
     });

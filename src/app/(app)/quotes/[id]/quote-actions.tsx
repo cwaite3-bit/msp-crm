@@ -1,8 +1,10 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Send, Link2, ExternalLink, Trash2, ReceiptText, RotateCcw } from "lucide-react";
 import { setQuoteStatus, deleteQuote, resetQuote, resendQuoteEmail } from "@/server/actions/quotes";
 import { pushQuoteToQuickBooks } from "@/server/actions/quickbooks";
@@ -12,6 +14,11 @@ import type { InferSelectModel } from "drizzle-orm";
 
 type Quote = InferSelectModel<typeof quotes>;
 type Contact = InferSelectModel<typeof contacts>;
+
+// Plenty of room for "up to a small paragraph" without inviting someone to
+// paste the whole proposal cover letter in here — this is a short personal
+// note, not a replacement for the quote's own notes-to-client field.
+const SEND_NOTE_MAX_LENGTH = 600;
 
 export function QuoteActions({
   quote,
@@ -24,6 +31,8 @@ export function QuoteActions({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [sendNote, setSendNote] = useState("");
 
   const publicUrl = typeof window !== "undefined" ? `${window.location.origin}/q/${quote.publicToken}` : `/q/${quote.publicToken}`;
   const recipientLabel = contact
@@ -35,18 +44,18 @@ export function QuoteActions({
     toast.success("Client link copied");
   }
 
-  // Emailing the customer is a one-way action — there's no "unsend" — so
-  // this asks for an explicit confirmation naming exactly who it's about
-  // to email, the same way "Delete" and "Start over" below already do.
+  // Emailing the customer is a one-way action — there's no "unsend" — so the
+  // dialog itself (opened from the "Mark as sent" button below) states
+  // plainly who this is about to email and that it can't be undone, the
+  // same way the "Delete" and "Start over" confirm() dialogs below do — a
+  // plain confirm() can't also hold the optional note's textarea, so this
+  // one is a proper dialog instead.
   function send() {
-    if (
-      !confirm(
-        `Send quote #${quote.quoteNumber} to ${recipientLabel} now? This emails them a link to view, accept, or decline this quote, and moves it out of Draft status. This cannot be undone.`
-      )
-    )
-      return;
     startTransition(async () => {
-      const result = await setQuoteStatus(quote.id, "SENT");
+      const note = sendNote.trim();
+      const result = await setQuoteStatus(quote.id, "SENT", note ? { message: note } : undefined);
+      setSendDialogOpen(false);
+      setSendNote("");
       router.refresh();
       if (result?.emailSent) {
         toast.success("Marked as sent and emailed to the customer");
@@ -137,9 +146,45 @@ export function QuoteActions({
         </Button>
       </a>
       {quote.status === "DRAFT" && (
-        <Button size="sm" onClick={send} disabled={pending}>
-          <Send className="h-4 w-4" /> Mark as sent
-        </Button>
+        <Dialog open={sendDialogOpen} onOpenChange={(next) => (!pending ? setSendDialogOpen(next) : null)}>
+          <DialogTrigger asChild>
+            <Button size="sm" disabled={pending}>
+              <Send className="h-4 w-4" /> Mark as sent
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Send quote #{quote.quoteNumber}</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-slate-500">
+                This emails {recipientLabel} a link to view, accept, or decline this quote, and moves it out of Draft
+                status. This cannot be undone.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-slate-500">
+                  Personal note (optional) — included in the body of the email, above the quote link. Leave it blank
+                  to send the standard email as-is.
+                </span>
+                <Textarea
+                  rows={4}
+                  maxLength={SEND_NOTE_MAX_LENGTH}
+                  value={sendNote}
+                  onChange={(e) => setSendNote(e.target.value)}
+                  placeholder="e.g. Thanks for walking through your environment with me yesterday — let me know if any of the numbers below need adjusting."
+                />
+                <span className="self-end text-[11px] text-slate-400">
+                  {sendNote.length}/{SEND_NOTE_MAX_LENGTH}
+                </span>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={send} disabled={pending}>
+                <Send className="h-4 w-4" /> {pending ? "Sending…" : "Send quote"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
       {quote.status !== "DRAFT" && (
         <Button
