@@ -4,12 +4,12 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { signMsaPublic } from "@/server/actions/msa";
-import { CheckCircle2 } from "lucide-react";
-import { toast } from "sonner";
+import { signAddendumPublic, declineAddendumPublic } from "@/server/actions/addendums";
 import { SignaturePad } from "@/components/signature-pad";
+import { CheckCircle2, XCircle } from "lucide-react";
+import { toast } from "sonner";
 
-export function MsaSignPanel({
+export function AddendumSignPanel({
   token,
   status,
   signedByName,
@@ -42,12 +42,21 @@ export function MsaSignPanel({
     );
   }
 
+  if (status === "DECLINED") {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-red-800">
+        <XCircle className="h-5 w-5" />
+        <span className="text-sm font-medium">This addendum was declined.</span>
+      </div>
+    );
+  }
+
   const canSubmit = Boolean(name.trim() && agreed && signatureImage);
 
   function sign() {
     if (!canSubmit) return;
     startTransition(async () => {
-      const result = await signMsaPublic(token, name.trim(), title.trim(), signatureImage);
+      const result = await signAddendumPublic(token, name.trim(), title.trim(), signatureImage);
       if (result.ok) {
         router.refresh();
       } else {
@@ -56,10 +65,22 @@ export function MsaSignPanel({
     });
   }
 
+  function decline() {
+    if (!confirm("Decline this addendum?")) return;
+    startTransition(async () => {
+      const result = await declineAddendumPublic(token);
+      if (result.ok) {
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not decline this addendum");
+      }
+    });
+  }
+
   if (mode === "signing") {
     return (
       <div className="flex flex-col gap-3 rounded-lg border border-[#bcdcf7] bg-[#eaf4fd] p-4">
-        <p className="text-sm font-medium text-[#024996]">Sign this agreement</p>
+        <p className="text-sm font-medium text-[#024996]">Sign this addendum</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" autoFocus />
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" />
@@ -67,10 +88,10 @@ export function MsaSignPanel({
         <SignaturePad onChange={setSignatureImage} />
         <label className="flex items-start gap-2 text-xs text-[#024996]">
           <input type="checkbox" className="mt-0.5" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-          I have read this Master Service Agreement and agree to be bound by its terms on behalf of the client
-          named above. I understand this typed name and drawn signature together are a legally binding electronic
-          signature under applicable e-signature law, though not a certified/notarized digital signature product,
-          and that my IP address is logged with this submission.
+          I have read this Addendum and agree to be bound by its terms, which amend the Master Service Agreement
+          referenced above, on behalf of the client named there. I understand this typed name and drawn signature
+          together are a legally binding electronic signature under applicable e-signature law, though not a
+          certified/notarized digital signature product, and that my IP address is logged with this submission.
         </label>
         <div className="flex gap-2">
           <Button onClick={sign} disabled={pending || !canSubmit} className="bg-[#024996] hover:bg-[#023a78]">
@@ -88,7 +109,10 @@ export function MsaSignPanel({
   return (
     <div className="flex flex-wrap gap-3">
       <Button onClick={() => setMode("signing")} className="bg-[#1d98eb] hover:bg-[#1683cc]">
-        <CheckCircle2 className="h-4 w-4" /> Sign agreement
+        <CheckCircle2 className="h-4 w-4" /> Sign addendum
+      </Button>
+      <Button variant="outline" onClick={decline} disabled={pending}>
+        <XCircle className="h-4 w-4" /> Decline
       </Button>
       <Button variant="ghost" onClick={() => window.print()}>
         Save / print as PDF

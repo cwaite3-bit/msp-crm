@@ -241,7 +241,9 @@ export type MsaSection = {
   table?: { headers: string[]; rows: string[][] };
 };
 
-function money(v: string | number) {
+// Exported so src/server/addendum.ts can format dollar amounts identically
+// in the addendum's own content builder without duplicating this logic.
+export function money(v: string | number) {
   const n = Number(v);
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

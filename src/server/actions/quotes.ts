@@ -43,7 +43,10 @@ async function requireUser() {
   return session.user;
 }
 
-async function recalcAndSaveTotals(quoteId: string) {
+// Exported so src/server/actions/addendums.ts can recompute a quote's
+// cached totals after merging a signed addendum's line items onto it —
+// same "one function, never drifts" reasoning as computeQuoteTotals itself.
+export async function recalcAndSaveTotals(quoteId: string) {
   const items = await db.select().from(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
   const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
   const totals = computeQuoteTotals(items, {
@@ -429,8 +432,9 @@ export async function updateQuoteMeta(
 
 // Resolve the unit price for a product at a given service tier: use the
 // tier-specific override if one exists, otherwise fall back to the product's
-// default price.
-async function resolveUnitPrice(productId: string, tierId?: string | null) {
+// default price. Exported so addendums.ts can price a catalog product onto
+// an addendum exactly the same way the quote builder does.
+export async function resolveUnitPrice(productId: string, tierId?: string | null) {
   const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
   if (!product) throw new Error("Product not found");
   if (tierId) {

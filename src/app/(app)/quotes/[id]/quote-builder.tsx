@@ -137,6 +137,14 @@ export function QuoteBuilder({
                           Auto
                         </span>
                       )}
+                      {item.addendumId && (
+                        <span
+                          className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700"
+                          title="Added via a signed MSA addendum"
+                        >
+                          Addendum
+                        </span>
+                      )}
                     </div>
                     {readOnly ? (
                       item.description && <div className="whitespace-pre-wrap text-xs text-slate-500">{item.description}</div>

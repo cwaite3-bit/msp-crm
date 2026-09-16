@@ -374,6 +374,15 @@ export const quoteLineItems = pgTable(
     // catalog / "add on the fly" flow) are never touched by that process.
     source: text("source").notNull().default("MANUAL"), // "MANUAL" | "ENGINE"
 
+    // Set when this line was merged onto the quote by a signed MSA addendum
+    // (see quoteAddendums below) rather than added directly on the quote —
+    // lets the quote builder show which items came from which addendum.
+    // Nullable/set-null-on-delete: a pre-addendum line item, or one added
+    // directly by staff, has no addendum; deleting a draft addendum before
+    // it's signed never touches quote_line_items anyway (nothing's merged
+    // yet), so this only ever fires for a truly orphaned reference.
+    addendumId: text("addendum_id").references(() => quoteAddendums.id, { onDelete: "set null" }),
+
     categoryName: text("category_name").notNull(),
     name: text("name").notNull(),
     description: text("description"),
@@ -437,6 +446,8 @@ export const quoteEventTypeEnum = pgEnum("quote_event_type", [
   "QUICKBOOKS_SYNCED",
   "QUICKBOOKS_SYNC_FAILED",
   "OWNER_CHANGED",
+  "ADDENDUM_SIGNED",
+  "ADDENDUM_DECLINED",
 ]);
 
 export const quoteEvents = pgTable(
@@ -505,6 +516,124 @@ export const msaDocuments = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [index("msa_documents_quote_idx").on(t.quoteId)]
+);
+
+// ---------------------------------------------------------------------------
+// MSA Addendums — for a customer adding services after their MSA is already
+// SIGNED, without re-opening (or re-signing) the whole original agreement.
+// Staff build up a small set of new/changed line items against an accepted,
+// MSA-signed quote (from the catalog or added on the fly, same "MANUAL"
+// line-item flow as the quote builder), then generate a short "Addendum
+// No. N to the Master Service Agreement" document that references the
+// original signed MSA by date and incorporates it by reference — legally
+// an amendment, not a fresh contract — and is itself signable via the same
+// lightweight typed-name + drawn-signature flow as the MSA
+// (/addendum/[signingToken], mirroring /msa/[signingToken]).
+//
+// Once signed, its line items are copied onto the quote's own
+// quote_line_items (tagged with addendumId so the quote builder can show
+// where they came from) and the quote's cached totals are recalculated —
+// so the quote and its public page always reflect everything the customer
+// has actually agreed to, addenda included. A signed addendum can also be
+// invoiced to QuickBooks on its own (see pushAddendumToQuickBooks), the
+// same staff-triggered, gated-on-signature pattern as the quote's first
+// invoice.
+// ---------------------------------------------------------------------------
+
+export const addendumStatusEnum = pgEnum("addendum_status", ["DRAFT", "SENT", "SIGNED", "DECLINED"]);
+
+export const quoteAddendums = pgTable(
+  "quote_addendums",
+  {
+    id: cuid(),
+    quoteId: text("quote_id")
+      .notNull()
+      .references(() => quotes.id, { onDelete: "cascade" }),
+
+    // Sequential per quote (1, 2, 3, ...) — assigned at creation from the
+    // count of addenda already on this quote, purely for display ("Addendum
+    // No. 2") and never renumbered even if an earlier draft is deleted.
+    number: integer("number").notNull(),
+
+    status: addendumStatusEnum("status").notNull().default("DRAFT"),
+
+    // Staff-facing summary of what's changing (e.g. "Add managed backup for
+    // 2 new servers") — shown to staff on the addendum list and folded into
+    // the generated document as the description of the amendment.
+    note: text("note"),
+
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id),
+
+    // Structured snapshot (see src/server/addendum.ts `AddendumContent`) of
+    // the new line items plus a reference back to the parent quote/MSA,
+    // captured at "Generate" time — same freeze-on-generate,
+    // lock-once-signed pattern as msaDocuments.content, so a later catalog
+    // edit or MSA-terms change can never silently rewrite an addendum
+    // that's already out for signature (or already signed).
+    content: jsonb("content").notNull().default({}),
+
+    signingToken: text("signing_token")
+      .notNull()
+      .unique()
+      .$defaultFn(() => crypto.randomUUID()),
+
+    sentAt: timestamp("sent_at"),
+    sentToEmail: text("sent_to_email"),
+
+    signedAt: timestamp("signed_at"),
+    signedByName: text("signed_by_name"),
+    signedByTitle: text("signed_by_title"),
+    signedIp: text("signed_ip"),
+    signatureImageUrl: text("signature_image_url"),
+
+    declinedAt: timestamp("declined_at"),
+
+    // This addendum's own QuickBooks invoice (new/changed items only) —
+    // independent of quotes.quickbooksInvoiceId, which only ever covers
+    // what was on the quote at first-invoice time.
+    quickbooksInvoiceId: text("quickbooks_invoice_id"),
+    quickbooksSyncedAt: timestamp("quickbooks_synced_at"),
+    quickbooksSyncError: text("quickbooks_sync_error"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("quote_addendums_quote_idx").on(t.quoteId),
+    uniqueIndex("quote_addendums_quote_number_idx").on(t.quoteId, t.number),
+  ]
+);
+
+// The staff-editable working line items for a DRAFT/SENT addendum — mirrors
+// quoteLineItems exactly (categoryName/name/description/unitLabel/
+// billingType/quantity/unitPrice/lineTotal/sortOrder) so the same catalog
+// picker / "add on the fly" UI and pricing.ts totals helpers work unchanged
+// against either table. Copied onto quoteLineItems (not moved — this table
+// stays as the addendum's own record) once the addendum is signed.
+export const quoteAddendumLineItems = pgTable(
+  "quote_addendum_line_items",
+  {
+    id: cuid(),
+    addendumId: text("addendum_id")
+      .notNull()
+      .references(() => quoteAddendums.id, { onDelete: "cascade" }),
+    productId: text("product_id").references(() => products.id),
+
+    categoryName: text("category_name").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    unitLabel: text("unit_label").notNull(),
+    billingType: billingTypeEnum("billing_type").notNull(),
+
+    quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull().default("1"),
+    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    lineTotal: numeric("line_total", { precision: 12, scale: 2 }).notNull(),
+
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("quote_addendum_line_items_addendum_idx").on(t.addendumId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -580,11 +709,13 @@ export const quotesRelations = relations(quotes, ({ one, many }) => ({
   lineItems: many(quoteLineItems),
   events: many(quoteEvents),
   msaDocuments: many(msaDocuments),
+  addendums: many(quoteAddendums),
 }));
 
 export const quoteLineItemsRelations = relations(quoteLineItems, ({ one }) => ({
   quote: one(quotes, { fields: [quoteLineItems.quoteId], references: [quotes.id] }),
   product: one(products, { fields: [quoteLineItems.productId], references: [products.id] }),
+  addendum: one(quoteAddendums, { fields: [quoteLineItems.addendumId], references: [quoteAddendums.id] }),
 }));
 
 export const quoteEventsRelations = relations(quoteEvents, ({ one }) => ({
@@ -597,4 +728,16 @@ export const slasRelations = relations(slas, ({ many }) => ({
 
 export const msaDocumentsRelations = relations(msaDocuments, ({ one }) => ({
   quote: one(quotes, { fields: [msaDocuments.quoteId], references: [quotes.id] }),
+}));
+
+export const quoteAddendumsRelations = relations(quoteAddendums, ({ one, many }) => ({
+  quote: one(quotes, { fields: [quoteAddendums.quoteId], references: [quotes.id] }),
+  createdBy: one(users, { fields: [quoteAddendums.createdById], references: [users.id] }),
+  lineItems: many(quoteAddendumLineItems),
+  mergedLineItems: many(quoteLineItems),
+}));
+
+export const quoteAddendumLineItemsRelations = relations(quoteAddendumLineItems, ({ one }) => ({
+  addendum: one(quoteAddendums, { fields: [quoteAddendumLineItems.addendumId], references: [quoteAddendums.id] }),
+  product: one(products, { fields: [quoteAddendumLineItems.productId], references: [products.id] }),
 }));

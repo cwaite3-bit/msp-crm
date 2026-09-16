@@ -1,39 +1,20 @@
-// Renders an MsaContent snapshot to a PDF buffer using @react-pdf/renderer
-// (pure Node PDF generation — no headless browser/Chromium dependency,
-// which matters because this runs in a Vercel serverless function). Used
-// for both the plain "upload to Adobe Acrobat Sign / DocuSign" export and,
-// with a signature block appended, the record of an in-house typed-name
-// signature.
+// Renders an AddendumContent snapshot to a PDF buffer, mirroring
+// msa-pdf.tsx's structure/branding exactly (same fonts, colors, table and
+// signature-block styling) so a signed addendum looks like it belongs with
+// the MSA it amends, just shorter.
 import React from "react";
 import { Document, Page, Text, View, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
-import type { MsaContent } from "./msa";
-import { renderMsaSections } from "./msa";
+import type { AddendumContent } from "./addendum";
+import { renderAddendumSections } from "./addendum";
 import { LOCKDOWN_LOGO_DATA_URI } from "./msa-pdf-assets";
-
-// Brand palette sampled directly from public/lockdown-logo.png (navy +
-// bright blue), used here instead of the generic slate/amber this PDF used
-// before, so the downloadable MSA actually looks like it came from this
-// business.
-// Exported so src/server/addendum-pdf.tsx can match this document's branding
-// exactly rather than re-picking colors by hand.
-export const BRAND_NAVY = "#024996";
-export const BRAND_BLUE = "#1d98eb";
-export const BRAND_GRAY = "#64748b";
+import { BRAND_NAVY, BRAND_BLUE, BRAND_GRAY } from "./msa-pdf";
+import type { MsaSignatureInfo } from "./msa-pdf";
 
 const styles = StyleSheet.create({
   page: { padding: 48, paddingTop: 32, fontSize: 10, fontFamily: "Helvetica", color: "#1e293b" },
   logo: { width: 160, marginBottom: 16 },
   title: { fontSize: 16, fontWeight: 700, marginBottom: 2, color: BRAND_NAVY },
   subtitle: { fontSize: 10, color: BRAND_GRAY, marginBottom: 16 },
-  banner: {
-    backgroundColor: "#eaf4fd",
-    borderLeftWidth: 3,
-    borderLeftColor: BRAND_BLUE,
-    padding: 8,
-    marginBottom: 16,
-    fontSize: 8.5,
-    color: BRAND_NAVY,
-  },
   heading: { fontSize: 11, fontWeight: 700, marginTop: 14, marginBottom: 4, color: BRAND_NAVY },
   paragraph: { marginBottom: 6, lineHeight: 1.4 },
   tableRow: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#cbd5e1", paddingVertical: 4 },
@@ -47,32 +28,6 @@ const styles = StyleSheet.create({
   signatureRow: { marginBottom: 9 },
   signatureRowLabel: { fontSize: 7.5, color: BRAND_GRAY, marginBottom: 1 },
   signatureRowValue: { fontSize: 9.5, borderBottomWidth: 0.75, borderBottomColor: "#94a3b8", paddingBottom: 3, minHeight: 14 },
-  footer: { position: "absolute", bottom: 24, left: 48, right: 48, fontSize: 7.5, color: BRAND_GRAY, textAlign: "center" },
-  contactBlock: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#eaf4fd",
-    borderLeftWidth: 3,
-    borderLeftColor: BRAND_BLUE,
-    padding: 8,
-    marginBottom: 16,
-  },
-  contactPhoto: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
-  contactInitials: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 8,
-    backgroundColor: BRAND_NAVY,
-    color: "#ffffff",
-    fontSize: 11,
-    fontWeight: 700,
-    textAlign: "center",
-    paddingTop: 9,
-  },
-  contactLabel: { fontSize: 7, fontWeight: 700, color: BRAND_NAVY, textTransform: "uppercase", letterSpacing: 0.5 },
-  contactName: { fontSize: 9.5, fontWeight: 700, color: "#0f172a" },
-  contactDetail: { fontSize: 8, color: BRAND_GRAY },
   signatureImageWrap: {
     borderBottomWidth: 0.75,
     borderBottomColor: "#94a3b8",
@@ -81,65 +36,19 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   signatureImage: { height: 26, width: 110, objectFit: "contain" },
+  footer: { position: "absolute", bottom: 24, left: 48, right: 48, fontSize: 7.5, color: BRAND_GRAY, textAlign: "center" },
 });
 
-// Single source of truth for the "signature" shape shared between the
-// internal MsaDocument component and the exported renderMsaPdf function
-// below — previously these were two separately hand-typed object literals
-// that had to be kept in sync by hand, and adding signatureImageUrl to only
-// one of them broke the production type-check without any warning at the
-// call site. Defining it once and reusing it here makes that impossible.
-export type MsaSignatureInfo = {
-  signedByName: string;
-  signedByTitle: string | null;
-  signedAt: string;
-  signedIp: string | null;
-  signatureImageUrl?: string | null;
-};
-
-function MsaDocument({
-  content,
-  signature,
-}: {
-  content: MsaContent;
-  signature?: MsaSignatureInfo | null;
-}) {
-  const sections = renderMsaSections(content);
+function AddendumDocument({ content, signature }: { content: AddendumContent; signature?: MsaSignatureInfo | null }) {
+  const sections = renderAddendumSections(content);
   return (
     <Document>
       <Page size="LETTER" style={styles.page}>
         <Image src={LOCKDOWN_LOGO_DATA_URI} style={styles.logo} />
-        <Text style={styles.title}>Master Service Agreement</Text>
+        <Text style={styles.title}>Addendum No. {content.addendumNumber} to the Master Service Agreement</Text>
         <Text style={styles.subtitle}>
           Quote #{content.quoteNumber} · {content.customerName} · Generated {new Date(content.generatedAt).toLocaleDateString()}
         </Text>
-        {content.accountContact && (
-          <View style={styles.contactBlock}>
-            {content.accountContact.photoUrl ? (
-              <Image src={content.accountContact.photoUrl} style={styles.contactPhoto} />
-            ) : (
-              <Text style={styles.contactInitials}>
-                {content.accountContact.name
-                  .split(/\s+/)
-                  .map((p) => p[0])
-                  .filter(Boolean)
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase() || "?"}
-              </Text>
-            )}
-            <View>
-              <Text style={styles.contactLabel}>Your point of contact</Text>
-              <Text style={styles.contactName}>
-                {content.accountContact.name}
-                {content.accountContact.title ? ` — ${content.accountContact.title}` : ""}
-              </Text>
-              <Text style={styles.contactDetail}>
-                {[content.accountContact.email, content.accountContact.phone].filter(Boolean).join("   ·   ")}
-              </Text>
-            </View>
-          </View>
-        )}
 
         {sections.map((section) => (
           <View key={section.heading}>
@@ -220,9 +129,7 @@ function MsaDocument({
                 <Text style={styles.signatureRowLabel}>Date</Text>
                 <Text style={styles.signatureRowValue}>{signature ? new Date(signature.signedAt).toLocaleString() : " "}</Text>
               </View>
-              {signature?.signedIp && (
-                <Text style={{ fontSize: 7, color: BRAND_GRAY }}>Submitted from IP {signature.signedIp}</Text>
-              )}
+              {signature?.signedIp && <Text style={{ fontSize: 7, color: BRAND_GRAY }}>Submitted from IP {signature.signedIp}</Text>}
             </View>
           </View>
         </View>
@@ -237,6 +144,6 @@ function MsaDocument({
   );
 }
 
-export async function renderMsaPdf(content: MsaContent, signature?: MsaSignatureInfo | null): Promise<Buffer> {
-  return renderToBuffer(<MsaDocument content={content} signature={signature ?? null} />);
+export async function renderAddendumPdf(content: AddendumContent, signature?: MsaSignatureInfo | null): Promise<Buffer> {
+  return renderToBuffer(<AddendumDocument content={content} signature={signature ?? null} />);
 }

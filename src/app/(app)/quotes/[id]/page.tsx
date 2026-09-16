@@ -1,12 +1,13 @@
 import { db } from "@/server/db";
-import { quotes, quoteLineItems, customers, contacts, serviceTiers } from "@/server/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { quotes, quoteLineItems, customers, contacts, serviceTiers, quoteAddendumLineItems } from "@/server/db/schema";
+import { eq, asc, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { listCatalog } from "@/server/actions/catalog";
 import { getRateCard, getChecklistTemplate, getM365Plans } from "@/server/actions/settings";
 import { listSlas } from "@/server/actions/slas";
 import { listUsers } from "@/server/actions/users";
 import { getMsaForQuote } from "@/server/actions/msa";
+import { listAddendumsForQuote } from "@/server/actions/addendums";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -20,6 +21,7 @@ import { AddOnsForm } from "./addons-form";
 import { PlanComparisonPanel } from "./plan-comparison-panel";
 import { ChecklistPanel } from "./checklist-panel";
 import { MsaPanel } from "./msa-panel";
+import { AddendumsPanel } from "./addendum-panel";
 import {
   computeAllTiers,
   computeRecommendedTier,
@@ -53,6 +55,18 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const slaList = await listSlas();
   const staff = await listUsers();
   const msaDocument = await getMsaForQuote(id);
+  const addendums = await listAddendumsForQuote(id);
+  const addendumLineItemRows =
+    addendums.length > 0
+      ? await db
+          .select()
+          .from(quoteAddendumLineItems)
+          .where(inArray(quoteAddendumLineItems.addendumId, addendums.map((a) => a.id)))
+          .orderBy(asc(quoteAddendumLineItems.sortOrder))
+      : [];
+  const lineItemsByAddendum = Object.fromEntries(
+    addendums.map((a) => [a.id, addendumLineItemRows.filter((li) => li.addendumId === a.id)])
+  );
   const quantities: Quantities = { ...EMPTY_QUANTITIES, ...(quote.quantities as Partial<Quantities>) };
   const risk: RiskFactors = { ...DEFAULT_RISK_FACTORS, ...(quote.riskFactors as Partial<RiskFactors>) };
   const addOns: AddOnSelections = { ...EMPTY_ADD_ONS, ...(quote.addOnSelections as Partial<AddOnSelections>) };
@@ -166,6 +180,22 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             </CardHeader>
             <CardContent>
               <MsaPanel quote={quote} contact={customerContacts.find((c) => c.id === quote.contactId) ?? null} document={msaDocument} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>MSA addendums</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AddendumsPanel
+                quoteId={quote.id}
+                msaSigned={msaDocument?.status === "SIGNED"}
+                addendums={addendums}
+                lineItemsByAddendum={lineItemsByAddendum}
+                catalog={catalog}
+                contact={customerContacts.find((c) => c.id === quote.contactId) ?? null}
+              />
             </CardContent>
           </Card>
         </div>

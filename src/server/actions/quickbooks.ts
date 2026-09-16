@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/server/db";
-import { quotes, quoteLineItems, quoteEvents, customers, products, quickbooksConnections, msaDocuments } from "@/server/db/schema";
+import { quotes, quoteLineItems, quoteEvents, customers, products, quickbooksConnections, msaDocuments, quoteAddendums } from "@/server/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { auth } from "@/auth";
 import { findOrCreateQboCustomer, findOrCreateQboItem, createQboInvoice } from "@/server/quickbooks/sync";
@@ -193,6 +193,130 @@ export async function pushQuoteToQuickBooks(quoteId: string): Promise<{ ok: bool
       .where(eq(quotes.id, quoteId));
     await db.insert(quoteEvents).values({ quoteId, type: "QUICKBOOKS_SYNC_FAILED", detail: message });
     revalidatePath(`/quotes/${quoteId}`);
+    return { ok: false, error: message };
+  }
+}
+
+// Invoices a SIGNED addendum's own new/changed line items as their own
+// QuickBooks invoice — independent of (and never re-touching) the quote's
+// first invoice. Mirrors pushQuoteToQuickBooks's staff-triggered, gated-on-
+// signature pattern exactly, just scoped to the subset of quote_line_items
+// that this addendum contributed (quote_line_items.addendum_id = this
+// addendum), plus the same discount-bucket-multiplier and annual-prepay
+// handling so an addendum on a discounted or annually-billed quote invoices
+// consistently with the quote's own first invoice. See "Known limitations"
+// in the architecture doc re: ongoing recurring billing beyond this and the
+// quote's first invoice — the same caveat applies here.
+export async function pushAddendumToQuickBooks(addendumId: string): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+
+  try {
+    const [addendum] = await db.select().from(quoteAddendums).where(eq(quoteAddendums.id, addendumId)).limit(1);
+    if (!addendum) throw new Error("Addendum not found");
+    if (addendum.status !== "SIGNED") throw new Error("This addendum hasn't been signed yet.");
+    if (addendum.quickbooksInvoiceId) throw new Error("This addendum has already been invoiced in QuickBooks.");
+
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, addendum.quoteId)).limit(1);
+    if (!quote) throw new Error("Quote not found");
+    const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
+    if (!customer) throw new Error("Customer not found");
+
+    const allLineItems = await db.select().from(quoteLineItems).where(eq(quoteLineItems.quoteId, quote.id));
+    const addendumLineItems = allLineItems.filter((li) => li.addendumId === addendumId);
+    if (addendumLineItems.length === 0) throw new Error("This addendum has no line items to invoice");
+
+    let qboCustomerId = customer.quickbooksCustomerId;
+    if (!qboCustomerId) {
+      qboCustomerId = await findOrCreateQboCustomer({
+        displayName: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        billAddr: {
+          Line1: customer.billingStreet || undefined,
+          City: customer.billingCity || undefined,
+          CountrySubDivisionCode: customer.billingState || undefined,
+          PostalCode: customer.billingZip || undefined,
+        },
+      });
+      await db.update(customers).set({ quickbooksCustomerId: qboCustomerId }).where(eq(customers.id, customer.id));
+    }
+
+    const billingSettings = await getBillingSettings();
+    const isAnnual = quote.billingFrequency === "ANNUAL";
+    const annualMultiplier = isAnnual ? 12 * (1 - billingSettings.annualDiscountPct / 100) : 1;
+
+    // Same bucket-level discount multiplier as pushQuoteToQuickBooks, derived
+    // from ALL of the quote's line items (the discount is a whole-quote
+    // percentage/amount, not per addendum) and then applied only to this
+    // addendum's lines below.
+    const { subtotalMonthly, subtotalOneTime } = computeSubtotals(allLineItems);
+    const discountType = quote.discountType as "PERCENT" | "AMOUNT" | null;
+    const discountValue = quote.discountValue ? Number(quote.discountValue) : null;
+    const monthlyDiscountMultiplier =
+      subtotalMonthly > 0 ? applyDiscount(subtotalMonthly, discountType, discountValue) / subtotalMonthly : 1;
+    const oneTimeDiscountMultiplier =
+      subtotalOneTime > 0 ? applyDiscount(subtotalOneTime, discountType, discountValue) / subtotalOneTime : 1;
+    const hasDiscount = Boolean(discountType && discountValue);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    const resolvedLines = [];
+    for (const item of addendumLineItems) {
+      let qboItemId: string | null = null;
+      if (item.productId) {
+        const [product] = await db.select().from(products).where(eq(products.id, item.productId)).limit(1);
+        qboItemId = product?.quickbooksItemId || null;
+        if (!qboItemId) {
+          qboItemId = await findOrCreateQboItem(item.name);
+          await db.update(products).set({ quickbooksItemId: qboItemId }).where(eq(products.id, item.productId));
+        }
+      } else {
+        qboItemId = await findOrCreateQboItem(item.name);
+      }
+      const isRecurring = item.billingType === "RECURRING_MONTHLY";
+      const bucketMultiplier = item.billingType === "ONE_TIME" ? oneTimeDiscountMultiplier : monthlyDiscountMultiplier;
+      const discountedUnitPrice = Number(item.unitPrice) * bucketMultiplier;
+      resolvedLines.push({
+        itemId: qboItemId,
+        description: `${item.name} (${item.unitLabel})${isRecurring && isAnnual ? " — Annual (12 months)" : ""}${hasDiscount ? " (discount applied)" : ""}`,
+        quantity: Number(item.quantity),
+        unitPrice: round2(isRecurring ? discountedUnitPrice * annualMultiplier : discountedUnitPrice),
+      });
+    }
+
+    const msaSettings = await getMsaSettings();
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + msaSettings.paymentDueDays);
+
+    const invoice = await createQboInvoice({
+      customerId: qboCustomerId,
+      lines: resolvedLines,
+      dueDate: dueDate.toISOString().slice(0, 10),
+      privateNote: `MSP CRM quote #${quote.quoteNumber} — Addendum No. ${addendum.number}${isAnnual ? " (annual prepayment)" : ""}${hasDiscount ? ` (${discountType === "PERCENT" ? `${discountValue}% ` : `$${discountValue} `}discount applied)` : ""}.`,
+    });
+
+    await db
+      .update(quoteAddendums)
+      .set({ quickbooksInvoiceId: invoice.Id, quickbooksSyncedAt: new Date(), quickbooksSyncError: null })
+      .where(eq(quoteAddendums.id, addendumId));
+
+    await db.insert(quoteEvents).values({
+      quoteId: quote.id,
+      type: "QUICKBOOKS_SYNCED",
+      detail: `Addendum #${addendum.number} invoice ${invoice.DocNumber || invoice.Id}`,
+    });
+
+    await notifyQuoteCreator(
+      quote.id,
+      `Addendum #${addendum.number} invoiced in QuickBooks — quote #${quote.quoteNumber}`,
+      `<p>Addendum No. ${addendum.number} for quote #${quote.quoteNumber}${quote.title ? ` — "${quote.title}"` : ""} (${customer.name}) was invoiced in QuickBooks${invoice.DocNumber ? ` as invoice ${invoice.DocNumber}` : ""}.</p>
+<p><a href="${await appUrl()}/quotes/${quote.id}">Open the quote</a></p>`
+    );
+
+    revalidatePath(`/quotes/${quote.id}`);
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    await db.update(quoteAddendums).set({ quickbooksSyncError: message }).where(eq(quoteAddendums.id, addendumId));
     return { ok: false, error: message };
   }
 }
