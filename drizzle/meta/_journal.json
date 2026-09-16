@@ -71,6 +71,13 @@
       "when": 1789516706031,
       "tag": "0009_add_msa_addendums",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789520973995,
+      "tag": "0010_add_ai_quote_review",
+      "breakpoints": true
     }
   ]
 }

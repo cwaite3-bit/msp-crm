@@ -8,6 +8,7 @@ import { listSlas } from "@/server/actions/slas";
 import { listUsers } from "@/server/actions/users";
 import { getMsaForQuote } from "@/server/actions/msa";
 import { listAddendumsForQuote } from "@/server/actions/addendums";
+import { isAiReviewStale } from "@/server/actions/ai-review";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -22,6 +23,7 @@ import { PlanComparisonPanel } from "./plan-comparison-panel";
 import { ChecklistPanel } from "./checklist-panel";
 import { MsaPanel } from "./msa-panel";
 import { AddendumsPanel } from "./addendum-panel";
+import { AiReviewPanel } from "./ai-review-panel";
 import {
   computeAllTiers,
   computeRecommendedTier,
@@ -83,6 +85,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
 
   const checklist = (quote.checklist as { key: string; status: string; note?: string }[]) || [];
   const checklistDone = checklist.filter((c) => c.status === "Complete" || c.status === "N/A").length;
+  const aiReviewStale = quote.aiReviewText ? await isAiReviewStale(quote.id) : false;
 
   return (
     <div className="flex flex-col gap-6">
@@ -204,6 +207,24 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           </Card>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            AI review <span className="font-normal text-slate-400">— staff only, never shown to the customer</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AiReviewPanel
+            quoteId={quote.id}
+            reviewText={quote.aiReviewText}
+            generatedAt={quote.aiReviewGeneratedAt}
+            model={quote.aiReviewModel}
+            error={quote.aiReviewError}
+            isStale={aiReviewStale}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

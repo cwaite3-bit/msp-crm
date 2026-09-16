@@ -349,6 +349,22 @@ export const quotes = pgTable(
     quickbooksSyncError: text("quickbooks_sync_error"),
     quickbooksSyncedAt: timestamp("quickbooks_synced_at"),
 
+    // Staff-only AI review (see src/server/ai-review.ts) — a short,
+    // internal-only paragraph flagging things worth reconsidering on this
+    // quote (coverage gaps vs. Discovery's risk flags, common bundled
+    // services missing for this size/tier, SLA mismatch, etc.), generated
+    // on demand by a staff-clicked "Analyze" button and cached here until
+    // the underlying quote data changes. Never surfaced to the customer on
+    // any public page. aiReviewInputHash is a hash of the exact inputs the
+    // review was generated from, so the UI can tell staff "quote data has
+    // changed since this was generated" without re-calling the AI just to
+    // check staleness.
+    aiReviewText: text("ai_review_text"),
+    aiReviewGeneratedAt: timestamp("ai_review_generated_at"),
+    aiReviewInputHash: text("ai_review_input_hash"),
+    aiReviewModel: text("ai_review_model"),
+    aiReviewError: text("ai_review_error"),
+
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
