@@ -1,13 +1,14 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { HelpTip } from "@/components/help-tip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { generateAiQuoteReview } from "@/server/actions/ai-review";
 import { toast } from "sonner";
-import { Sparkles, ExternalLink } from "lucide-react";
+import { Sparkles, ExternalLink, FileText } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 // Mirrors AiReviewResult in src/server/ai-review.ts. Duplicated (rather
@@ -65,6 +66,7 @@ export function AiReviewPanel({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [rawOpen, setRawOpen] = useState(false);
 
   function analyze() {
     startTransition(async () => {
@@ -146,10 +148,27 @@ export function AiReviewPanel({
       )}
 
       {!parsed && reviewText && (
-        <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-700">
-          {reviewText}
-        </p>
+        <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            The AI&rsquo;s answer couldn&rsquo;t be shown as a formatted list this time — its raw response is
+            available below if you want to see what it said.
+          </p>
+          <Button size="sm" variant="outline" className="w-fit" onClick={() => setRawOpen(true)}>
+            <FileText className="h-4 w-4" /> View raw response
+          </Button>
+        </div>
       )}
+
+      <Dialog open={rawOpen} onOpenChange={setRawOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Raw AI response</DialogTitle>
+          </DialogHeader>
+          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-900 p-3 text-xs text-slate-100">
+            {reviewText}
+          </pre>
+        </DialogContent>
+      </Dialog>
 
       {!reviewText && !error && <p className="text-sm text-slate-500">Not analyzed yet.</p>}
 

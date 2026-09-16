@@ -124,7 +124,7 @@ Respond with ONLY a single JSON object and nothing else — no markdown code fen
     {
       "title": "short name of the opportunity",
       "type": "catalog" | "custom" | "research",
-      "rationale": "1-3 sentences: why this fits, referencing the specific quote data (and what was found via research, if type is research)",
+      "rationale": "1-2 concise sentences: why this fits, referencing the specific quote data (and what was found via research, if type is research). Be direct — no throat-clearing or repeated setup.",
       "estimatedMonthly": number or null,
       "estimatedOneTime": number or null,
       "sourceNote": "brief note on what was found via web search, or null if not research-based"

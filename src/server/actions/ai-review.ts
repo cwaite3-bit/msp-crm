@@ -129,7 +129,16 @@ type AnthropicContentBlock = {
   text?: string;
   citations?: { type: string; url?: string; title?: string }[];
 };
-type AnthropicMessageResponse = { content?: AnthropicContentBlock[] };
+type AnthropicMessageResponse = {
+  content?: AnthropicContentBlock[];
+  // "end_turn" on a normal finish; "max_tokens" means the response was cut
+  // off mid-generation because it hit our max_tokens budget — critically,
+  // that means `content` can hold a truncated JSON blob that reads as
+  // plausible text but fails JSON.parse (or worse, happens to parse into
+  // something wrong). We treat max_tokens as a hard failure below rather
+  // than trusting whatever text came back.
+  stop_reason?: string | null;
+};
 
 // Returns a result object rather than throwing — same reasoning as
 // resetQuote/pushQuoteToQuickBooks elsewhere in this app: Next.js redacts
@@ -166,7 +175,12 @@ export async function generateAiQuoteReview(quoteId: string): Promise<{ ok: bool
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2000,
+        // Raised from 2000: the deep-dive prompt (catalog + web search +
+        // up to 6 detailed opportunities, each with rationale/estimates)
+        // was routinely hitting 2000 tokens mid-JSON and getting silently
+        // truncated. 8000 gives real headroom; the stop_reason check right
+        // below is the actual safety net if it's ever still not enough.
+        max_tokens: 8000,
         system: AI_REVIEW_SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildAiReviewPrompt(input) }],
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
@@ -179,6 +193,18 @@ export async function generateAiQuoteReview(quoteId: string): Promise<{ ok: bool
     }
 
     const data = (await response.json()) as AnthropicMessageResponse;
+
+    // A truncated response can still contain a plausible-looking but
+    // incomplete JSON blob (or worse, one that happens to parse into
+    // something wrong) — never store it as a "successful" review. Bail out
+    // before even looking at the content, so the catch block below runs
+    // and (deliberately) leaves any previously-cached good review alone.
+    if (data.stop_reason === "max_tokens") {
+      throw new Error(
+        "The AI's response was cut off before it finished (hit the output length limit) — click Re-analyze to try again.",
+      );
+    }
+
     const textBlocks = (data.content || []).filter((block) => block.type === "text" && block.text);
     const combinedText = textBlocks.map((block) => block.text).join("\n").trim();
     if (!combinedText) throw new Error("The AI returned an empty response");
