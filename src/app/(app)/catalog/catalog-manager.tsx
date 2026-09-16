@@ -21,7 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Plus, Archive, Pencil, GripVertical, Palette, Search, X } from "lucide-react";
+import { Plus, Archive, Pencil, GripVertical, Palette, Search, Trash2, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   createProduct,
@@ -29,7 +29,9 @@ import {
   archiveProduct,
   createCategory,
   createTier,
+  updateTier,
   updateTierColor,
+  deleteTier,
   reorderTiers,
   setTierPrice,
   clearTierPrice,
@@ -145,8 +147,15 @@ export function CatalogManager({ catalog }: { catalog: Catalog }) {
                     <TableHead>Default price</TableHead>
                     {catalog.tiers.map((t) => (
                       <TableHead key={t.id} className="font-semibold">
-                        <span className={`inline-block rounded-md px-2 py-1 ${tierColorClasses(t.color).heading}`}>
-                          {t.name} price
+                        {/* Same rounded-pill/border treatment as the tier badges above
+                            the table (see the draggable badges in TierColorEditor below)
+                            — a soft tint + border reads as an intentional accent color,
+                            instead of the previous solid, edge-to-edge fill that made
+                            adjacent tier columns visually merge into one another. */}
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${tierColorClasses(t.color).badge}`}
+                        >
+                          {t.name}
                         </span>
                       </TableHead>
                     ))}
@@ -365,6 +374,7 @@ function ServiceTierBadges({ tiers }: { tiers: Catalog["tiers"] }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [colorPickerFor, setColorPickerFor] = useState<Catalog["tiers"][number] | null>(null);
+  const [editingFor, setEditingFor] = useState<Catalog["tiers"][number] | null>(null);
 
   function handleDrop(targetId: string) {
     setDragOverId(null);
@@ -428,6 +438,14 @@ function ServiceTierBadges({ tiers }: { tiers: Catalog["tiers"] }) {
               >
                 <Palette className="h-3 w-3" />
               </button>
+              <button
+                type="button"
+                onClick={() => setEditingFor(t)}
+                className="opacity-0 transition-opacity group-hover:opacity-100"
+                title="Rename or delete"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
             </div>
           );
         })}
@@ -453,7 +471,87 @@ function ServiceTierBadges({ tiers }: { tiers: Catalog["tiers"] }) {
           )}
         </DialogContent>
       </Dialog>
+
+      <EditTierDialog tier={editingFor} onClose={() => setEditingFor(null)} />
     </>
+  );
+}
+
+// Rename/describe a tier, or delete it outright. Delete is guarded
+// server-side (updateTier/deleteTier in actions/catalog.ts) against a
+// duplicate name, the tier being the default, or quotes still using it —
+// this dialog just surfaces whatever error comes back rather than
+// re-implementing those checks.
+function EditTierDialog({ tier, onClose }: { tier: Catalog["tiers"][number] | null; onClose: () => void }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  // Re-seed the form fields whenever a different tier is opened for
+  // editing (Dialog stays mounted between opens, so this can't just be
+  // useState's initial value).
+  const [loadedForId, setLoadedForId] = useState<string | null>(null);
+  if (tier && tier.id !== loadedForId) {
+    setLoadedForId(tier.id);
+    setName(tier.name);
+    setDescription(tier.description || "");
+  }
+
+  function save() {
+    if (!tier) return;
+    startTransition(async () => {
+      const result = await updateTier(tier.id, name, description);
+      if (!result.ok) {
+        toast.error(result.error || "Could not save this tier");
+        return;
+      }
+      router.refresh();
+      onClose();
+    });
+  }
+
+  function remove() {
+    if (!tier) return;
+    if (!confirm(`Delete the "${tier.name}" tier? This also removes any product prices set for it. This cannot be undone.`)) return;
+    startTransition(async () => {
+      const result = await deleteTier(tier.id);
+      if (!result.ok) {
+        toast.error(result.error || "Could not delete this tier");
+        return;
+      }
+      toast.success(`Deleted the "${tier.name}" tier`);
+      router.refresh();
+      onClose();
+    });
+  }
+
+  return (
+    <Dialog open={!!tier} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit &ldquo;{tier?.name}&rdquo;</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label>Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Description</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description shown to staff" />
+          </div>
+        </div>
+        <DialogFooter className="sm:justify-between">
+          <Button variant="ghost" onClick={remove} disabled={pending} className="text-red-600 hover:text-red-700">
+            <Trash2 className="h-4 w-4" /> Delete tier
+          </Button>
+          <Button onClick={save} disabled={pending || !name.trim()}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

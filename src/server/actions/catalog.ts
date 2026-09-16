@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/server/db";
-import { productCategories, serviceTiers, products, productTierPrices } from "@/server/db/schema";
+import { productCategories, serviceTiers, products, productTierPrices, quotes } from "@/server/db/schema";
 import { auth } from "@/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -74,6 +74,66 @@ export async function updateTierColor(tierId: string, color: string) {
   await db.update(serviceTiers).set({ color: resolvedColor }).where(eq(serviceTiers.id, tierId));
   revalidatePath("/catalog");
   revalidatePath("/quotes");
+}
+
+// Renames a tier and/or updates its description. Returns a result object
+// (rather than throwing) so a duplicate name — `service_tiers.name` is
+// unique — comes back as a message the dialog can show inline instead of
+// an unhandled rejection.
+export async function updateTier(
+  tierId: string,
+  name: string,
+  description?: string
+): Promise<{ ok: boolean; error?: string }> {
+  await requireUser();
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: "Tier name is required" };
+
+  const [clash] = await db.select().from(serviceTiers).where(eq(serviceTiers.name, trimmed)).limit(1);
+  if (clash && clash.id !== tierId) {
+    return { ok: false, error: `A tier named "${trimmed}" already exists` };
+  }
+
+  await db
+    .update(serviceTiers)
+    .set({ name: trimmed, description: description?.trim() || null })
+    .where(eq(serviceTiers.id, tierId));
+  revalidatePath("/catalog");
+  revalidatePath("/quotes");
+  return { ok: true };
+}
+
+// Deletes a tier outright. Guarded against the two ways this could quietly
+// break something else: the tier being relied on as the fallback for new
+// quotes (`isDefault` — see createQuote in actions/quotes.ts), or an
+// existing quote already pointing at it (`quotes.serviceTierId` has no
+// cascade, so leaving that unchecked would otherwise surface as a raw
+// Postgres foreign-key error instead of a message staff can act on). Its
+// per-product prices in `product_tier_prices` DO cascade automatically
+// (see the schema) since those are only meaningful alongside the tier.
+export async function deleteTier(tierId: string): Promise<{ ok: boolean; error?: string }> {
+  await requireUser();
+  const [tier] = await db.select().from(serviceTiers).where(eq(serviceTiers.id, tierId)).limit(1);
+  if (!tier) return { ok: false, error: "Tier not found" };
+
+  if (tier.isDefault) {
+    return { ok: false, error: "This is the default tier used for new quotes, so it can't be deleted." };
+  }
+
+  const quotesUsingTier = await db.select({ id: quotes.id }).from(quotes).where(eq(quotes.serviceTierId, tierId));
+  if (quotesUsingTier.length > 0) {
+    return {
+      ok: false,
+      error: `${quotesUsingTier.length} quote${quotesUsingTier.length === 1 ? " is" : "s are"} still set to this tier — reassign ${
+        quotesUsingTier.length === 1 ? "it" : "them"
+      } to a different tier before deleting it.`,
+    };
+  }
+
+  await db.delete(serviceTiers).where(eq(serviceTiers.id, tierId));
+  revalidatePath("/catalog");
+  revalidatePath("/quotes");
+  return { ok: true };
 }
 
 // Persists a full new left-to-right order for every tier at once (from
