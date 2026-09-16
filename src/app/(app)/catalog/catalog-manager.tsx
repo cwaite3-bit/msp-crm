@@ -130,7 +130,7 @@ export function CatalogManager({ catalog }: { catalog: Catalog }) {
         if (query && catProducts.length === 0) return null;
         return (
           <div key={cat.id}>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{cat.name}</p>
+            <p className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-700">{cat.name}</p>
             {catProducts.length === 0 ? (
               <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
                 No products in this category yet — add one with &ldquo;New product/service&rdquo; above.
@@ -144,8 +144,10 @@ export function CatalogManager({ catalog }: { catalog: Catalog }) {
                     <TableHead>Billing</TableHead>
                     <TableHead>Default price</TableHead>
                     {catalog.tiers.map((t) => (
-                      <TableHead key={t.id} className={`font-semibold ${tierColorClasses(t.color).heading}`}>
-                        {t.name} price
+                      <TableHead key={t.id} className="font-semibold">
+                        <span className={`inline-block rounded-md px-2 py-1 ${tierColorClasses(t.color).heading}`}>
+                          {t.name} price
+                        </span>
                       </TableHead>
                     ))}
                     <TableHead />
