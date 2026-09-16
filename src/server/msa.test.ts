@@ -183,7 +183,7 @@ test("renderMsaSections includes the Provider-protection sections (warranty/secu
   assert.ok(thirdParty?.paragraphs[0].includes("not responsible for the acts, omissions"));
 
   const indemnification = sections.find((s) => s.heading.includes("Indemnification"));
-  assert.equal(indemnification?.paragraphs.length, 2);
+  assert.equal(indemnification?.paragraphs.length, 3);
   assert.ok(indemnification?.paragraphs[1].includes("Client will indemnify"));
 
   const general = sections.find((s) => s.heading.includes("General"));

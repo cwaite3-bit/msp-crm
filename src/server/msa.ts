@@ -294,6 +294,25 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
   });
 
   sections.push({
+    heading: "Definitions",
+    paragraphs: [
+      "The following terms have the meanings given below wherever they're capitalized in this Agreement:",
+    ],
+    table: {
+      headers: ["Term", "Meaning"],
+      rows: [
+        ["Agreement", "This Master Service Agreement, together with the referenced Quote, any attached Statement(s) of Work, and any Change Requests executed by both parties."],
+        ["Services", "The managed services, licensing, and other items itemized in the Quote referenced above, together with anything expressly added by an executed Change Request."],
+        ["Quote", "The pricing proposal referenced on the first page of this Agreement, describing the specific services, quantities, service level, and fees Client has agreed to."],
+        ["Deliverables", "Any documentation, configuration, report, or other work product Provider creates specifically for Client in the course of performing the Services."],
+        ["Change Request", "A written request, made as described in the Change Requests & Periodic True-Up section below, to modify the scope, quantities, or fees under this Agreement."],
+        ["Confidential Information", "Has the meaning given in the Confidentiality section below."],
+        ["Force Majeure Event", "Has the meaning given in the Force Majeure section below."],
+      ],
+    },
+  });
+
+  sections.push({
     heading: "Term & Renewal",
     paragraphs: [
       `This Agreement begins on the Effective Date and continues for an initial term of ${s.initialTermMonths} month${s.initialTermMonths === 1 ? "" : "s"} ("Initial Term").`,
@@ -343,6 +362,8 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
         ? `Provider may increase recurring fees effective at each renewal term, not to exceed ${s.annualPriceIncreaseCapPct}% per year, on at least 30 days' written notice.`
         : `Provider may increase recurring fees effective at each renewal term on at least 30 days' written notice.`,
       `If any amount remains unpaid more than ${s.suspensionForNonPaymentDays} days past its due date, Provider may suspend the services (in whole or in part) upon written notice to Client, without liability to Provider, until the account is brought current.`,
+      s.expenseReimbursementSummary,
+      s.billingDisputeSummary,
     ],
   });
 
@@ -411,13 +432,15 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
 
   sections.push({
     heading: "Third-Party Products & Services",
-    paragraphs: [s.thirdPartyDisclaimerSummary],
+    paragraphs: [s.thirdPartyDisclaimerSummary, s.subcontractorDataSharingSummary],
   });
 
   sections.push({
     heading: "Confidentiality",
     paragraphs: [
+      s.confidentialityScopeSummary,
       `Each party will protect the other's confidential information with the same degree of care it uses for its own confidential information of similar importance, and will not disclose it to third parties except as needed to perform this Agreement or as required by law. This obligation survives termination of this Agreement for ${s.confidentialityYears} year${s.confidentialityYears === 1 ? "" : "s"}.`,
+      s.confidentialityReturnSummary,
     ],
   });
 
@@ -428,7 +451,7 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
 
   sections.push({
     heading: "Intellectual Property",
-    paragraphs: [s.ipOwnershipSummary],
+    paragraphs: [s.ipOwnershipSummary, s.feedbackLicenseSummary],
   });
 
   sections.push({
@@ -455,6 +478,11 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
             "NEITHER PARTY WILL BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS, LOST DATA, OR LOST BUSINESS OPPORTUNITY, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.",
           ]
         : []),
+      ...(s.claimsLimitationYears > 0
+        ? [
+            `No action arising out of or related to this Agreement, regardless of its form, may be brought by either party more than ${s.claimsLimitationYears} year${s.claimsLimitationYears === 1 ? "" : "s"} after the cause of action accrued, except that Provider may pursue unpaid fees until the applicable statute of limitations expires.`,
+          ]
+        : []),
     ],
   });
 
@@ -463,6 +491,7 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
     paragraphs: [
       "Each party will indemnify, defend, and hold harmless the other party from third-party claims arising from its own gross negligence, willful misconduct, or infringement of a third party's intellectual property rights.",
       s.clientIndemnitySummary,
+      s.indemnificationProcedureSummary,
     ],
   });
 
@@ -478,6 +507,7 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
     paragraphs: [
       terminationForConvenienceParagraph,
       `Either party may terminate this Agreement immediately for cause if the other party materially breaches this Agreement and fails to cure that breach within ${s.terminationForCauseCureDays} days of written notice describing the breach.`,
+      s.insolvencyTerminationSummary,
       "Upon termination, Client remains responsible for all fees accrued through the termination date, and Provider will reasonably cooperate with an orderly transition of services at Client's request and expense, at Provider's then-current professional services rate unless otherwise agreed in writing.",
     ],
   });
@@ -492,7 +522,9 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
     paragraphs: [
       s.disputeResolutionSummary,
       ...(s.requiresArbitration ? [s.arbitrationSummary] : []),
-      `This Agreement is governed by the laws of the State of ${governingState}, without regard to its conflict-of-laws principles.`,
+      `This Agreement is governed by the laws of the State of ${governingState}, without regard to its conflict-of-laws principles. The parties consent to the exclusive jurisdiction and venue of the courts located in ${s.venueSummary || governingState} for any dispute not subject to arbitration above.`,
+      ...(s.includesJuryTrialWaiver ? ["EACH PARTY WAIVES ITS RIGHT TO A TRIAL BY JURY IN ANY ACTION ARISING OUT OF OR RELATING TO THIS AGREEMENT."] : []),
+      "In any action to enforce this Agreement, the prevailing party is entitled to recover its reasonable attorneys' fees and costs from the other party, in addition to any other relief awarded.",
     ],
   });
 
@@ -504,6 +536,10 @@ export function renderMsaSections(content: MsaContent): MsaSection[] {
       "Neither party may assign this Agreement without the other's written consent, except to a successor in a merger, acquisition, or sale of substantially all assets. Neither party will, during the term of this Agreement and for one year after, solicit for hire the other party's employees who were directly involved in performing this Agreement, without that party's written consent.",
       s.noticeProvisionSummary,
       "If any provision of this Agreement is held unenforceable, the remaining provisions remain in full effect. This Agreement, together with the referenced Quote and any Statement(s) of Work, is the entire agreement between the parties regarding its subject matter and supersedes all prior discussions or agreements on that subject. It may only be amended in a writing signed by both parties.",
+      "No delay or failure by either party to exercise or enforce any right under this Agreement operates as a waiver of that right, and no single or partial exercise of a right precludes any further exercise of it or of any other right. This Agreement is for the sole benefit of Client and Provider and creates no rights in any third party.",
+      "Section headings are for convenience only and do not affect interpretation. Both parties have had the opportunity to review and negotiate this Agreement, so no provision will be construed against either party merely because that party's counsel or personnel drafted it. The rights and remedies available to each party under this Agreement are cumulative and in addition to, not in place of, any other rights or remedies available at law or in equity.",
+      "Any provision of this Agreement that by its nature is intended to survive termination or expiration — including confidentiality, payment obligations already accrued, intellectual property, limitation of liability, and dispute resolution — survives regardless of the reason for termination.",
+      "This Agreement may be signed in counterparts and executed electronically, including through the electronic signature process Provider uses to present it; an electronically signed copy is treated as an original for all purposes.",
     ],
   });
 

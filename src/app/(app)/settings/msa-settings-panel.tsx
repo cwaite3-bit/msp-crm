@@ -146,6 +146,14 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
             <Input type="number" min={0} value={form.suspensionForNonPaymentDays} onChange={(e) => set("suspensionForNonPaymentDays", Math.max(0, Number(e.target.value) || 0))} />
           </Field>
         </div>
+        <div className="mt-3 flex flex-col gap-3">
+          <Field label="Expense reimbursement" help="Travel, mileage, lodging, or on-site work outside the Quote that Client reimburses at cost.">
+            <Textarea rows={2} value={form.expenseReimbursementSummary} onChange={(e) => set("expenseReimbursementSummary", e.target.value)} />
+          </Field>
+          <Field label="Billing dispute window" help="How and when a client has to raise a disputed charge before it's deemed accepted.">
+            <Textarea rows={2} value={form.billingDisputeSummary} onChange={(e) => set("billingDisputeSummary", e.target.value)} />
+          </Field>
+        </div>
       </div>
 
       <div>
@@ -168,6 +176,9 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
             <Input type="number" min={0} value={form.terminationForCauseCureDays} onChange={(e) => set("terminationForCauseCureDays", Math.max(0, Number(e.target.value) || 0))} />
           </Field>
         </div>
+        <Field label="Insolvency/bankruptcy termination" help="Lets either side walk away immediately if the other becomes insolvent or files for bankruptcy — separate from the breach-based termination above.">
+          <Textarea rows={2} className="mt-3" value={form.insolvencyTerminationSummary} onChange={(e) => set("insolvencyTerminationSummary", e.target.value)} />
+        </Field>
       </div>
 
       <div>
@@ -193,6 +204,12 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
           </Field>
           <Field label="Subcontractors">
             <Textarea rows={2} value={form.subcontractorsSummary} onChange={(e) => set("subcontractorsSummary", e.target.value)} />
+          </Field>
+          <Field label="Data sharing with subcontractors" help="What you may share with the vendors/tools you use to deliver service (ticketing, RMM, backup, billing), and the confidentiality flow-down you require of them.">
+            <Textarea rows={2} value={form.subcontractorDataSharingSummary} onChange={(e) => set("subcontractorDataSharingSummary", e.target.value)} />
+          </Field>
+          <Field label="Indemnification procedure" help="The mechanics of an indemnity claim — notice, who controls the defense, and cooperation — separate from the client-indemnification obligation above.">
+            <Textarea rows={2} value={form.indemnificationProcedureSummary} onChange={(e) => set("indemnificationProcedureSummary", e.target.value)} />
           </Field>
         </div>
       </div>
@@ -226,6 +243,24 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
           <Field label="Confidentiality survives (years)">
             <Input type="number" min={0} value={form.confidentialityYears} onChange={(e) => set("confidentialityYears", Math.max(0, Number(e.target.value) || 0))} />
           </Field>
+          <Field label="Contractual filing deadline (years)" help="How long either party has to bring a claim under this Agreement, regardless of the state's own statute of limitations. 0 = not stated, defer entirely to law.">
+            <Input type="number" min={0} value={form.claimsLimitationYears} onChange={(e) => set("claimsLimitationYears", Math.max(0, Number(e.target.value) || 0))} />
+          </Field>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          Confidentiality
+          <HelpTip text="What counts as confidential (and what's carved out), plus what happens to it when the relationship ends — beyond the basic 'treat it carefully' obligation." />
+        </p>
+        <div className="flex flex-col gap-3">
+          <Field label="What's confidential (definition & exceptions)">
+            <Textarea rows={2} value={form.confidentialityScopeSummary} onChange={(e) => set("confidentialityScopeSummary", e.target.value)} />
+          </Field>
+          <Field label="Required disclosure, return & survival">
+            <Textarea rows={2} value={form.confidentialityReturnSummary} onChange={(e) => set("confidentialityReturnSummary", e.target.value)} />
+          </Field>
         </div>
       </div>
 
@@ -237,6 +272,9 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
           </Field>
           <Field label="Intellectual property">
             <Textarea rows={2} value={form.ipOwnershipSummary} onChange={(e) => set("ipOwnershipSummary", e.target.value)} />
+          </Field>
+          <Field label="Client feedback license" help="Lets you use feedback/suggestions a client volunteers without it becoming a confidentiality or ownership dispute.">
+            <Textarea rows={2} value={form.feedbackLicenseSummary} onChange={(e) => set("feedbackLicenseSummary", e.target.value)} />
           </Field>
           <Field label="Insurance">
             <Textarea rows={2} value={form.insuranceRequirementSummary} onChange={(e) => set("insuranceRequirementSummary", e.target.value)} />
@@ -346,6 +384,14 @@ export function MsaSettingsPanel({ settings: initial }: { settings: MsaSettings 
               <Textarea rows={2} value={form.arbitrationSummary} onChange={(e) => set("arbitrationSummary", e.target.value)} />
             </Field>
           )}
+          <Field label="Venue" help="Where a lawsuit (as opposed to arbitration) would actually be filed — a county/city, or leave the generic default.">
+            <Input value={form.venueSummary} onChange={(e) => set("venueSummary", e.target.value)} placeholder="e.g. Franklin County, Ohio" />
+          </Field>
+          <Field label="Waive right to jury trial?" help="Standard in most MSP contracts, but not appropriate in every state — check with your attorney if unsure.">
+            <label className="flex h-9 items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={form.includesJuryTrialWaiver} onChange={(e) => set("includesJuryTrialWaiver", e.target.checked)} /> Yes
+            </label>
+          </Field>
           <Field label="Notice provision">
             <Textarea rows={2} value={form.noticeProvisionSummary} onChange={(e) => set("noticeProvisionSummary", e.target.value)} />
           </Field>

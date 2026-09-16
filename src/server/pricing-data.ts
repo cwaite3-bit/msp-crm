@@ -565,11 +565,33 @@ export type MsaSettings = {
   excludesConsequentialDamages: boolean;
 
   confidentialityYears: number;
+  // What counts as confidential (and what's carved out), separate from the
+  // "how carefully each side has to treat it" obligation below — a real
+  // agreement usually states both.
+  confidentialityScopeSummary: string;
+  // What happens to confidential information at the end of the
+  // relationship (or if either side is legally compelled to disclose it).
+  confidentialityReturnSummary: string;
   dataProtectionSummary: string;
   ipOwnershipSummary: string;
+  // Client-volunteered feedback/suggestions Provider may use to improve its
+  // services without that becoming a confidentiality or ownership dispute.
+  feedbackLicenseSummary: string;
   insuranceRequirementSummary: string;
   disputeResolutionSummary: string;
   governingLawState: string;
+  // Where a lawsuit (as opposed to arbitration) would actually be filed —
+  // free text so it can name a county/city or stay generic. Blank falls
+  // back to naming only the governing-law state, as before this field
+  // existed.
+  venueSummary: string;
+  // A bench-trial-only clause is standard in MSP contracts but not
+  // appropriate in every state — a toggle rather than baked in.
+  includesJuryTrialWaiver: boolean;
+  // A contractual filing deadline, separate from (and typically shorter
+  // than) whatever the state's own statute of limitations provides.
+  // 0 = not stated, defer entirely to law.
+  claimsLimitationYears: number;
 
   // Additional protections for the Provider side — all editable text so
   // wording can be adjusted, but seeded with standard MSP-industry language.
@@ -579,6 +601,11 @@ export type MsaSettings = {
   thirdPartyDisclaimerSummary: string; // not liable for third-party vendor/software/ISP failures
   independentContractorSummary: string; // Provider is an independent contractor, not Client's employee/agent/partner
   subcontractorsSummary: string; // Provider may use qualified subcontractors and remains responsible for their work
+  // What Provider may share with those subcontractors/service providers
+  // (ticketing, RMM, backup, billing platforms, etc.) and under what
+  // confidentiality flow-down — distinct from subcontractorsSummary above,
+  // which is about performance responsibility rather than data handling.
+  subcontractorDataSharingSummary: string;
 
   // Support escalation ladder shown in the MSA (and, in spirit, on the
   // client-facing quote/SLA pages) — who to contact and in what order if an
@@ -621,6 +648,20 @@ export type MsaSettings = {
   arbitrationSummary: string;
 
   noticeProvisionSummary: string;
+
+  // Reasonable out-of-pocket costs (travel, on-site work outside the Quote)
+  // Client reimburses Provider for — separate from the recurring/one-time
+  // fees themselves.
+  expenseReimbursementSummary: string;
+  // How and when Client must raise a disputed invoice charge.
+  billingDisputeSummary: string;
+  // A termination trigger distinct from the breach-based "for cause"
+  // termination above: either party's own insolvency/bankruptcy.
+  insolvencyTerminationSummary: string;
+  // The mechanics of indemnification (notice, control of defense,
+  // cooperation) — separate from the underlying obligation itself, which is
+  // stated in the Indemnification section's fixed opening paragraph.
+  indemnificationProcedureSummary: string;
 };
 
 export const DEFAULT_MSA_SETTINGS: MsaSettings = {
@@ -649,15 +690,24 @@ export const DEFAULT_MSA_SETTINGS: MsaSettings = {
   excludesConsequentialDamages: true,
 
   confidentialityYears: 3,
+  confidentialityScopeSummary:
+    "\"Confidential Information\" means non-public information either party discloses to the other in connection with this Agreement that is marked confidential or that a reasonable person would understand to be confidential given its nature and the circumstances of disclosure — including business, financial, and technical information, client data, and the terms of this Agreement itself. It does not include information that is or becomes public through no fault of the receiving party, was already known to the receiving party free of any confidentiality obligation, is developed independently without reference to the other party's information, or is rightfully received from a third party without restriction.",
+  confidentialityReturnSummary:
+    "If either party is required by law, subpoena, or court order to disclose the other party's confidential information, it will, where legally permitted, give the other party prompt notice so it may seek a protective order, and will disclose only the portion actually required. On request, or when this Agreement ends, each party will return or destroy the other's confidential information in its possession, except for copies kept under a routine document-retention policy or as required by law; information that qualifies as a trade secret remains protected for as long as it retains that status under applicable law.",
   dataProtectionSummary:
     "Provider will implement and maintain commercially reasonable administrative, technical, and physical safeguards designed to protect client data encountered while delivering the services, and will not access, use, or disclose client data except as needed to deliver the services or as required by law.",
   ipOwnershipSummary:
     "Client retains ownership of its own data, accounts, and pre-existing intellectual property. Provider retains ownership of its own pre-existing tools, scripts, documentation templates, and methodologies, and grants client a non-exclusive license to use any deliverables created specifically for client under this agreement.",
+  feedbackLicenseSummary:
+    "If Client volunteers feedback, ideas, or suggestions about Provider's services, Provider may use them to improve its services without payment, attribution, or any confidentiality obligation, and without that feedback being treated as Client's confidential information — provided Provider will not identify Client as its source without permission.",
   insuranceRequirementSummary:
     "Provider will maintain commercially reasonable general liability, professional liability (errors & omissions), and cyber liability insurance for the duration of this agreement, and will provide a certificate of insurance on reasonable request.",
   disputeResolutionSummary:
     "The parties will first attempt to resolve any dispute through good-faith negotiation between designated representatives. Unresolved disputes will be subject to the exclusive jurisdiction of the state and federal courts located in the governing law state below.",
   governingLawState: "",
+  venueSummary: "the county or judicial district in which Provider maintains its principal place of business",
+  includesJuryTrialWaiver: true,
+  claimsLimitationYears: 2,
 
   warrantyDisclaimerSummary:
     "Provider warrants that services will be performed in a professional and workmanlike manner consistent with generally accepted industry standards. EXCEPT AS EXPRESSLY STATED IN THIS AGREEMENT, PROVIDER DISCLAIMS ALL OTHER WARRANTIES, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. Provider does not warrant that the services will be uninterrupted or error-free.",
@@ -671,6 +721,8 @@ export const DEFAULT_MSA_SETTINGS: MsaSettings = {
     "Provider is an independent contractor. Nothing in this Agreement creates an employment, agency, joint venture, or partnership relationship between the parties. Provider is solely responsible for its own employees, subcontractors, taxes, benefits, and insurance.",
   subcontractorsSummary:
     "Provider may use qualified subcontractors to perform portions of the services and remains responsible for the performance of the services as a whole.",
+  subcontractorDataSharingSummary:
+    "Provider may share Client's confidential information with the subcontractors and service providers described above to the extent necessary to deliver the services — for example, ticketing, remote monitoring, backup, and billing platforms — and will require those subcontractors and service providers to protect that information under confidentiality obligations at least as protective as those in this Agreement.",
 
   escalationLevels: [
     { label: "Tier 1 — Help Desk", contact: "" },
@@ -715,6 +767,15 @@ export const DEFAULT_MSA_SETTINGS: MsaSettings = {
 
   noticeProvisionSummary:
     "All notices under this Agreement must be in writing and are considered delivered when sent by email to the addresses on file (with confirmation of transmission) during the recipient's normal business hours, on the next business day if sent after hours, or when delivered by a nationally recognized courier or certified mail.",
+
+  expenseReimbursementSummary:
+    "Client will reimburse Provider for reasonable, pre-approved out-of-pocket expenses incurred in delivering the services beyond normal remote support — such as travel, mileage, lodging, and on-site work not covered by the Quote — billed at cost and itemized on the applicable invoice.",
+  billingDisputeSummary:
+    "Client must notify Provider in writing of any disputed invoice charge within 30 days of the invoice date, describing the charge and the basis for the dispute; a charge not disputed within that window is deemed accepted. Disputing a charge does not excuse timely payment of the undisputed portion of the same invoice.",
+  insolvencyTerminationSummary:
+    "Either party may also terminate this Agreement immediately on written notice if the other party becomes insolvent, makes an assignment for the benefit of creditors, or has a bankruptcy or receivership proceeding filed by or against it that is not dismissed within 60 days.",
+  indemnificationProcedureSummary:
+    "A party seeking indemnification under this section will promptly notify the indemnifying party of the claim in writing, give the indemnifying party control of its defense and settlement, and reasonably cooperate at the indemnifying party's expense. The indemnifying party will not settle any claim in a way that admits fault by, or imposes non-monetary obligations on, the indemnified party without its written consent, and a delay in notice relieves the indemnifying party of its obligations under this section only to the extent the delay actually prejudices its defense.",
 };
 
 // ---------------------------------------------------------------------------
