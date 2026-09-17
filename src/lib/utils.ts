@@ -18,6 +18,20 @@ export function formatDate(d: Date | string) {
   return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(date);
 }
 
+// Same as formatDate but with a time-of-day, for things staff check to see
+// exactly when something happened today or yesterday (e.g. "a customer
+// just viewed this quote"), not just which day.
+export function formatDateTime(d: Date | string) {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export function slugify(input: string) {
   return input
     .toLowerCase()

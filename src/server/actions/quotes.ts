@@ -574,23 +574,17 @@ export async function repriceForTier(quoteId: string) {
 export async function setQuoteStatus(
   quoteId: string,
   status: "DRAFT" | "SENT" | "REJECTED",
-  options?: {
-    // An optional personal note staff types into the "Mark as sent" dialog,
-    // included in the body of the email the customer receives — entirely
-    // optional, nothing changes if it's left blank. Only meaningful when
-    // status === "SENT"; ignored otherwise.
-    message?: string;
-  }
+  options?: { message?: string }
 ) {
   await requireUser();
+  // Optional personal note staff can add when sending — only meaningful
+  // for SENT (see the "Mark as sent" dialog in quote-actions.tsx), and
+  // recorded on the quote event so there's a record of it even though it
+  // isn't stored as its own column.
   const trimmedMessage = status === "SENT" ? options?.message?.trim() || null : null;
   const patch: Record<string, unknown> = { status, updatedAt: new Date() };
   if (status === "SENT") patch.sentAt = new Date();
   await db.update(quotes).set(patch).where(eq(quotes.id, quoteId));
-  // Logging the note's own text (not just that one existed) on the SENT
-  // event keeps a durable record of what the customer was actually told,
-  // even though it isn't stored on the quote itself — same "detail" free-
-  // text field resendQuoteEmail already uses for "Resent to customer".
   await db.insert(quoteEvents).values({
     quoteId,
     type: status === "SENT" ? "SENT" : "REJECTED",
