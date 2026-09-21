@@ -78,12 +78,41 @@ export const customerStatusEnum = pgEnum("customer_status", [
   "FORMER",
 ]);
 
+// Sales-pipeline position while a customer's status is PROSPECT — a finer
+// breakdown than the LEAD/PROSPECT/ACTIVE/FORMER status above, which only
+// says which of the three broad buckets (Prospects nav page, Leads, real
+// Customers) a record shows up in. Kept as its own column rather than
+// folded into `status` so it survives a conversion to LEAD/ACTIVE (you keep
+// a record of how far it got) and so WON/LOST are real terminal states
+// instead of overloading FORMER (which means "used to be an active
+// customer," not "never converted").
+export const prospectStageEnum = pgEnum("prospect_stage", [
+  "NEW",
+  "CONTACTED",
+  "QUALIFIED",
+  "PROPOSAL",
+  "WON",
+  "LOST",
+]);
+
 export const customers = pgTable(
   "customers",
   {
     id: cuid(),
     name: text("name").notNull(),
     status: customerStatusEnum("status").notNull().default("LEAD"),
+    // Nullable: only meaningful while working a prospect through the
+    // pipeline — a customer created directly as ACTIVE (or imported before
+    // this column existed) just has no stage.
+    stage: prospectStageEnum("stage"),
+    // Rough deal-size estimate staff enter while working the pipeline —
+    // independent of any quote's actual totals, since a prospect usually
+    // doesn't have a quote built yet.
+    estimatedMonthlyValue: numeric("estimated_monthly_value", { precision: 12, scale: 2 }),
+    nextFollowUpAt: timestamp("next_follow_up_at"),
+    // Free-text reason captured when a prospect is marked Lost, so "why
+    // didn't this one convert" isn't lost to institutional memory.
+    lostReason: text("lost_reason"),
     industry: text("industry"),
     website: text("website"),
     phone: text("phone"),

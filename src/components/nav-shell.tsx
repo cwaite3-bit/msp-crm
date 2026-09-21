@@ -7,10 +7,11 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Users, FileText, Package, Settings, LayoutDashboard, LogOut, Menu, X } from "lucide-react";
+import { Users, FileText, Package, Settings, LayoutDashboard, LogOut, Menu, X, Target } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/prospects", label: "Prospects", icon: Target },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/quotes", label: "Quotes", icon: FileText },
   { href: "/catalog", label: "Catalog", icon: Package },

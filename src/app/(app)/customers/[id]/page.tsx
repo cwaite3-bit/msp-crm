@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { STAGE_LABELS, STAGE_BADGE_VARIANT, type ProspectStage } from "@/lib/prospect";
 import Link from "next/link";
 import { NewQuoteButton } from "@/app/(app)/quotes/new-quote-button";
 import { EditCustomerForm } from "./edit-customer-form";
@@ -41,6 +42,11 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             <Badge variant="secondary" className="capitalize">
               {customer.status.toLowerCase()}
             </Badge>
+            {customer.status === "PROSPECT" && customer.stage && (
+              <Badge variant={STAGE_BADGE_VARIANT[customer.stage as ProspectStage]}>
+                {STAGE_LABELS[customer.stage as ProspectStage]}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-slate-500">
             {customer.industry || "No industry set"} {customer.website ? `· ${customer.website}` : ""}
