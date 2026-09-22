@@ -14,8 +14,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { MapPin, Loader2 } from "lucide-react";
-import { updateStateAssignments, applyStateAssignmentsToExisting, reassignStateOwner } from "@/server/actions/customers";
+import { MapPin, Loader2, X } from "lucide-react";
+import {
+  updateStateAssignments,
+  applyStateAssignmentsToExisting,
+  reassignStateOwner,
+  clearStateOwner,
+} from "@/server/actions/customers";
 
 const UNASSIGNED = "__unassigned__";
 
@@ -33,6 +38,8 @@ export function StateAssignmentsDialog({
   const [assignments, setAssignments] = useState(initialAssignments);
   const [pending, startTransition] = useTransition();
   const [applying, startApplying] = useTransition();
+  const [clearingState, setClearingState] = useState<string | null>(null);
+  const [clearing, startClearing] = useTransition();
 
   function handleSave() {
     startTransition(async () => {
@@ -75,6 +82,28 @@ export function StateAssignmentsDialog({
     });
   }
 
+  // Escape hatch for a state that already reads "No default owner" but
+  // still has prospects sitting under a stale owner from before the
+  // reassign-on-save fix existed — normal Save has nothing to react to in
+  // that case since the stored rule hasn't changed. This clears everyone in
+  // the state, including hand-assigned owners, so it asks first.
+  function handleClearState(state: string) {
+    if (!window.confirm(`Remove the owner from every prospect in ${state}? This includes any assigned by hand, not just ones set by this rule. This can't be undone automatically.`)) {
+      return;
+    }
+    setClearingState(state);
+    startClearing(async () => {
+      const result = await clearStateOwner(state);
+      toast.success(
+        result.updated > 0
+          ? `Cleared the owner on ${result.updated} prospect${result.updated === 1 ? "" : "s"} in ${state}`
+          : `No prospects in ${state} had an owner`
+      );
+      setClearingState(null);
+      router.refresh();
+    });
+  }
+
   function handleApplyNow() {
     startApplying(async () => {
       const result = await applyStateAssignmentsToExisting();
@@ -99,9 +128,11 @@ export function StateAssignmentsDialog({
           <DialogTitle>Assign staff by state</DialogTitle>
           <DialogDescription>
             Set a default owner per state. Saving assigns it to matching prospects that don&rsquo;t already
-            have an owner (including ones you already have) and every future import into that state.
-            Use &ldquo;Apply now&rdquo; below if you add prospects some other way later and want to catch them up
-            without changing these rules.
+            have an owner and every future import into that state. Changing or clearing a state&rsquo;s owner
+            moves along any prospects that rule had assigned. Use &ldquo;Apply now&rdquo; below to catch up
+            prospects added some other way without changing these rules, or the <X className="inline h-3 w-3" />
+            next to a state set to &ldquo;No default owner&rdquo; to strip its current owner from every
+            prospect there.
           </DialogDescription>
         </DialogHeader>
 
@@ -112,20 +143,39 @@ export function StateAssignmentsDialog({
             {states.map((state) => (
               <div key={state} className="flex items-center justify-between gap-3">
                 <span className="text-sm font-medium text-slate-700">{state}</span>
-                <Select
-                  value={assignments[state] || UNASSIGNED}
-                  onValueChange={(v) => setAssignments((prev) => ({ ...prev, [state]: v === UNASSIGNED ? "" : v }))}
-                >
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={UNASSIGNED}>No default owner</SelectItem>
-                    {staff.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-1">
+                  <Select
+                    value={assignments[state] || UNASSIGNED}
+                    onValueChange={(v) => setAssignments((prev) => ({ ...prev, [state]: v === UNASSIGNED ? "" : v }))}
+                  >
+                    <SelectTrigger className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNASSIGNED}>No default owner</SelectItem>
+                      {staff.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!assignments[state] && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-slate-400 hover:text-red-600"
+                      title={`Remove the current owner from every ${state} prospect`}
+                      disabled={clearing && clearingState === state}
+                      onClick={() => handleClearState(state)}
+                    >
+                      {clearing && clearingState === state ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <X className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

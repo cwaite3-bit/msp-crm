@@ -366,6 +366,26 @@ export async function reassignStateOwner(state: string, fromOwnerId: string, toO
   revalidatePath("/prospects");
 }
 
+// Manual escape hatch for a state whose rule was already "No default owner"
+// *before* reassignStateOwner existed — e.g. cleared once with the old
+// Save button, which never actually moved anyone. Because the stored rule
+// already reads as unassigned, there's no old-vs-new delta left for
+// handleSave to react to, so those leftover owners can never un-stick
+// themselves through a normal Save. This clears the owner from EVERY
+// prospect in the state, including ones assigned by hand — it's an
+// explicit, confirmed action for exactly that stuck case, not something
+// that runs automatically.
+export async function clearStateOwner(state: string): Promise<{ updated: number }> {
+  await requireUser();
+  const result = await db
+    .update(customers)
+    .set({ accountOwnerId: null, updatedAt: new Date() })
+    .where(and(eq(customers.status, "PROSPECT"), eq(customers.billingState, state)))
+    .returning({ id: customers.id });
+  revalidatePath("/prospects");
+  return { updated: result.length };
+}
+
 // Catches up prospects that were imported *before* a territory rule existed
 // for their state. Only ever fills in an owner where one isn't already set
 // — it never overwrites a prospect someone has already (re)assigned by
