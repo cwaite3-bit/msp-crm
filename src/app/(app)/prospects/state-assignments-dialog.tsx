@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { MapPin, Loader2 } from "lucide-react";
-import { updateStateAssignments, applyStateAssignmentsToExisting } from "@/server/actions/customers";
+import { updateStateAssignments, applyStateAssignmentsToExisting, reassignStateOwner } from "@/server/actions/customers";
 
 const UNASSIGNED = "__unassigned__";
 
@@ -40,6 +40,22 @@ export function StateAssignmentsDialog({
       // string owner — an absent key and an unassigned rule mean the same
       // thing to importProspects, so there's no reason to keep the row.
       const cleaned = Object.fromEntries(Object.entries(assignments).filter(([, v]) => v));
+
+      // A rule that changed owner (or got cleared to "No default owner")
+      // should move the prospects it already assigned along with it —
+      // otherwise "unassign AZ" leaves everyone it previously assigned
+      // sitting with that owner forever, which is exactly the bug this
+      // guards against. Only prospects still owned by the OLD assignee are
+      // touched, so anyone reassigned to a third person by hand in the
+      // meantime is left alone.
+      for (const state of states) {
+        const oldOwner = initialAssignments[state] || "";
+        const newOwner = assignments[state] || "";
+        if (oldOwner && oldOwner !== newOwner) {
+          await reassignStateOwner(state, oldOwner, newOwner || null);
+        }
+      }
+
       await updateStateAssignments(cleaned);
       // Saving a rule only controls *future* imports on its own — it never
       // touches prospects already sitting in the system. Rolling the

@@ -344,6 +344,28 @@ export async function updateStateAssignments(assignments: Record<string, string>
   revalidatePath("/prospects");
 }
 
+// Moves along with a territory rule when it *changes* — e.g. AZ was "John",
+// now it's "Sarah" (or cleared entirely) — by reassigning only the
+// prospects currently owned by the rule's *previous* assignee. That's a
+// deliberate middle ground: it undoes what the old rule did (or clearing it
+// undoes what it did), but leaves alone any AZ prospect someone reassigned
+// to a third person by hand, since those no longer match `fromOwnerId` and
+// were never really "owned by the rule" to begin with.
+export async function reassignStateOwner(state: string, fromOwnerId: string, toOwnerId: string | null) {
+  await requireUser();
+  await db
+    .update(customers)
+    .set({ accountOwnerId: toOwnerId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(customers.status, "PROSPECT"),
+        eq(customers.billingState, state),
+        eq(customers.accountOwnerId, fromOwnerId)
+      )
+    );
+  revalidatePath("/prospects");
+}
+
 // Catches up prospects that were imported *before* a territory rule existed
 // for their state. Only ever fills in an owner where one isn't already set
 // — it never overwrites a prospect someone has already (re)assigned by
@@ -360,6 +382,41 @@ export async function applyStateAssignmentsToExisting(): Promise<{ updated: numb
       .where(and(eq(customers.status, "PROSPECT"), eq(customers.billingState, state), isNull(customers.accountOwnerId)))
       .returning({ id: customers.id });
     updated += result.length;
+  }
+  revalidatePath("/prospects");
+  return { updated };
+}
+
+// One-time catch-up for prospects imported before researchConfidence
+// existed as a real column (see importProspects) — for those, "Confidence:
+// High" only ever made it into the free-text research note, never into a
+// field the Prospects list can display or sort by. This recovers it by
+// reading that exact line back out of each prospect's notes. Safe to
+// re-run any time — it only ever looks at prospects with no
+// researchConfidence set yet, and never touches ones already filled in
+// (by this, by import, or typed in by hand).
+export async function backfillConfidenceFromNotes(): Promise<{ updated: number }> {
+  await requireUser();
+  const candidates = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(isNull(customers.researchConfidence));
+
+  let updated = 0;
+  for (const { id } of candidates) {
+    const customerNotes = await db.select({ body: notes.body }).from(notes).where(eq(notes.customerId, id));
+    let confidence: string | null = null;
+    for (const note of customerNotes) {
+      const match = note.body.match(/^Confidence:\s*(.+)$/m);
+      if (match) {
+        confidence = match[1].trim();
+        break;
+      }
+    }
+    if (confidence) {
+      await db.update(customers).set({ researchConfidence: confidence, updatedAt: new Date() }).where(eq(customers.id, id));
+      updated++;
+    }
   }
   revalidatePath("/prospects");
   return { updated };

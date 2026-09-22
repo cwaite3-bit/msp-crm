@@ -9,6 +9,7 @@ import { ImportProspectsDialog } from "./import-prospects-dialog";
 import { ProspectFilterBar } from "./prospect-filter-bar";
 import { ProspectTable } from "./prospect-table";
 import { StateAssignmentsDialog } from "./state-assignments-dialog";
+import { BackfillConfidenceButton } from "./backfill-confidence-button";
 import type { ProspectStage, SizeBucketValue } from "@/lib/prospect";
 
 export default async function ProspectsPage({
@@ -85,19 +86,22 @@ export default async function ProspectsPage({
       </div>
 
       {!showArchived && (
-        <ProspectFilterBar
-          initial={{
-            q: query,
-            state: state || "",
-            stage: stage || "",
-            industry: industry || "",
-            size: size || "",
-            owner: owner || "",
-          }}
-          states={filterOptions.states}
-          industries={filterOptions.industries}
-          staff={staff}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <ProspectFilterBar
+            initial={{
+              q: query,
+              state: state || "",
+              stage: stage || "",
+              industry: industry || "",
+              size: size || "",
+              owner: owner || "",
+            }}
+            states={filterOptions.states}
+            industries={filterOptions.industries}
+            staff={staff}
+          />
+          <BackfillConfidenceButton />
+        </div>
       )}
 
       <Card>
