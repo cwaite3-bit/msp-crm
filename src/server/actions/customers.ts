@@ -422,6 +422,82 @@ export async function backfillConfidenceFromNotes(): Promise<{ updated: number }
   return { updated };
 }
 
+export type BackfillConfidenceFileResult = {
+  ok: boolean;
+  updated: number;
+  skipped: number;
+  errors: string[];
+};
+
+// Same recovery problem as backfillConfidenceFromNotes, for the batches
+// where that one comes up empty — some early imports never wrote a
+// research note at all (they predate that formatting), so there's nothing
+// in the database to recover Confidence from. This re-reads the *original*
+// spreadsheet instead and matches rows back to existing prospects by
+// company name (same normalization importProspects uses for its own
+// duplicate check), filling in researchConfidence wherever it's still
+// blank. It never creates new prospects and never overwrites a
+// researchConfidence that's already set — by import, by
+// backfillConfidenceFromNotes, or typed in by hand — so re-running this
+// with the same file, or a file covering other states, is always safe.
+export async function backfillConfidenceFromFile(formData: FormData): Promise<BackfillConfidenceFileResult> {
+  await requireUser();
+  const file = formData.get("file") as File | null;
+  if (!file || file.size === 0) {
+    return { ok: false, updated: 0, skipped: 0, errors: ["No file was uploaded"] };
+  }
+
+  let rows: Record<string, unknown>[];
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) return { ok: false, updated: 0, skipped: 0, errors: ["The file has no sheets"] };
+    rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: "" });
+  } catch {
+    return { ok: false, updated: 0, skipped: 0, errors: ["Could not read that file — is it a valid .xlsx or .csv?"] };
+  }
+
+  const existing = await db
+    .select({ id: customers.id, name: customers.name, researchConfidence: customers.researchConfidence })
+    .from(customers);
+  const byName = new Map(existing.map((c) => [c.name.trim().toLowerCase(), c]));
+
+  let updated = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2; // header is row 1 in the spreadsheet
+    const name = pickField(row, ["company", "company name", "name", "business", "business name", "organization", "account name"]);
+    const confidence = pickField(row, ["confidence", "research confidence"]);
+    if (!name) {
+      skipped++;
+      continue;
+    }
+    const match = byName.get(name.trim().toLowerCase());
+    if (!match) {
+      skipped++;
+      errors.push(`Row ${rowNum}: no existing prospect named "${name}" — skipped`);
+      continue;
+    }
+    if (!confidence) {
+      skipped++;
+      continue;
+    }
+    if (match.researchConfidence) {
+      skipped++; // already has a value — never overwrite
+      continue;
+    }
+    await db.update(customers).set({ researchConfidence: confidence, updatedAt: new Date() }).where(eq(customers.id, match.id));
+    updated++;
+  }
+
+  revalidatePath("/prospects");
+  return { ok: true, updated, skipped, errors };
+}
+
 // Moves a prospect through the pipeline. `lostReason` only sticks when the
 // stage being set is LOST — moving off Lost later (re-opening a prospect)
 // clears whatever reason was recorded, since it no longer applies.

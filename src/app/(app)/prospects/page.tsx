@@ -10,6 +10,7 @@ import { ProspectFilterBar } from "./prospect-filter-bar";
 import { ProspectTable } from "./prospect-table";
 import { StateAssignmentsDialog } from "./state-assignments-dialog";
 import { BackfillConfidenceButton } from "./backfill-confidence-button";
+import { BackfillConfidenceFileDialog } from "./backfill-confidence-file-dialog";
 import type { ProspectStage, SizeBucketValue } from "@/lib/prospect";
 
 export default async function ProspectsPage({
@@ -100,7 +101,10 @@ export default async function ProspectsPage({
             industries={filterOptions.industries}
             staff={staff}
           />
-          <BackfillConfidenceButton />
+          <div className="flex items-center gap-1">
+            <BackfillConfidenceButton />
+            <BackfillConfidenceFileDialog />
+          </div>
         </div>
       )}
 
