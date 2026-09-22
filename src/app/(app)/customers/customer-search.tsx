@@ -1,13 +1,14 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2 } from "lucide-react";
 
 export function CustomerSearch({ initialQuery }: { initialQuery: string }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [value, setValue] = useState(initialQuery);
   const [pending, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -25,8 +26,12 @@ export function CustomerSearch({ initialQuery }: { initialQuery: string }) {
     setValue(next);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      const params = new URLSearchParams();
+      // Preserve every other param already in the URL (namely "archived") —
+      // typing a search while viewing the archived list shouldn't silently
+      // bounce back to the active one.
+      const params = new URLSearchParams(searchParams.toString());
       if (next.trim()) params.set("q", next.trim());
+      else params.delete("q");
       startTransition(() => {
         router.replace(params.toString() ? `${pathname}?${params}` : pathname);
       });

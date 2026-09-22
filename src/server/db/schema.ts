@@ -141,6 +141,13 @@ export const customers = pgTable(
 
     quickbooksCustomerId: text("quickbooks_customer_id"),
 
+    // Soft-delete: archiving hides a record from the Customers/Prospects
+    // lists without touching its data, and — unlike a real delete — never
+    // risks a foreign-key failure on a customer that already has quotes.
+    // Null means active/visible; set means archived, and is fully
+    // reversible by clearing it back to null.
+    archivedAt: timestamp("archived_at"),
+
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

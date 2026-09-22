@@ -126,25 +126,59 @@ export async function updateCustomer(customerId: string, formData: FormData) {
   revalidatePath("/prospects");
 }
 
-export async function searchCustomers(query: string) {
+// `showArchived` flips the list rather than merging it in — archived
+// customers are meant to be out of the way day-to-day, so a search normally
+// excludes them, and asking for the archived view shows only those (with a
+// way back via unarchiveCustomer) rather than mixing the two together.
+export async function searchCustomers(query: string, showArchived = false) {
   await requireUser();
   const trimmed = query.trim();
-  if (!trimmed) {
-    return db.select().from(customers).orderBy(desc(customers.createdAt)).limit(100);
-  }
-  return db
-    .select()
-    .from(customers)
-    .where(
-      or(
-        ilike(customers.name, `%${trimmed}%`),
-        ilike(customers.email, `%${trimmed}%`),
-        ilike(customers.phone, `%${trimmed}%`),
-        ilike(customers.industry, `%${trimmed}%`)
+  const archivedCondition = showArchived ? isNotNull(customers.archivedAt) : isNull(customers.archivedAt);
+  const conditions = trimmed
+    ? and(
+        archivedCondition,
+        or(
+          ilike(customers.name, `%${trimmed}%`),
+          ilike(customers.email, `%${trimmed}%`),
+          ilike(customers.phone, `%${trimmed}%`),
+          ilike(customers.industry, `%${trimmed}%`)
+        )
       )
-    )
-    .orderBy(desc(customers.createdAt))
-    .limit(100);
+    : archivedCondition;
+
+  return db.select().from(customers).where(conditions).orderBy(desc(customers.createdAt)).limit(100);
+}
+
+// Counts archived customers so the list page can show "Show archived (3)"
+// instead of a bare toggle with no idea what's behind it.
+export async function countArchivedCustomers(): Promise<number> {
+  await requireUser();
+  const rows = await db.select({ id: customers.id }).from(customers).where(isNotNull(customers.archivedAt));
+  return rows.length;
+}
+
+// Soft-delete: hides a customer/prospect from the lists without touching
+// its data. Deliberately not a real DELETE — a customer with quotes already
+// attached would fail on the quotes.customerId foreign key anyway, and even
+// for one with no quotes, permanently losing contacts/notes/history is
+// rarely what "get this out of my list" actually means. Fully reversible
+// via unarchiveCustomer.
+export async function archiveCustomer(customerId: string) {
+  const user = await requireUser();
+  await db.update(customers).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(customers.id, customerId));
+  await db.insert(notes).values({ customerId, authorId: user.id, type: "NOTE", body: "Archived." });
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/customers");
+  revalidatePath("/prospects");
+}
+
+export async function unarchiveCustomer(customerId: string) {
+  const user = await requireUser();
+  await db.update(customers).set({ archivedAt: null, updatedAt: new Date() }).where(eq(customers.id, customerId));
+  await db.insert(notes).values({ customerId, authorId: user.id, type: "NOTE", body: "Unarchived." });
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/customers");
+  revalidatePath("/prospects");
 }
 
 // ---- Prospects ----
@@ -163,6 +197,9 @@ export type ProspectFilters = {
   ownerId?: string; // a real users.id, or the sentinel "unassigned"
   sort?: "confidence" | "createdAt";
   dir?: "asc" | "desc";
+  // Same show-only-that-view convention as searchCustomers — the Prospects
+  // list excludes archived rows unless this is explicitly requested.
+  archived?: boolean;
 };
 
 // High/Medium/Low doesn't sort meaningfully as text, so rank it numerically
@@ -193,7 +230,10 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
   await requireUser();
   const trimmed = query.trim();
 
-  const conditions = [eq(customers.status, "PROSPECT")];
+  const conditions = [
+    eq(customers.status, "PROSPECT"),
+    filters.archived ? isNotNull(customers.archivedAt) : isNull(customers.archivedAt),
+  ];
   if (trimmed) {
     conditions.push(
       or(
@@ -238,6 +278,7 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
       researchConfidence: customers.researchConfidence,
       accountOwnerId: customers.accountOwnerId,
       ownerName: users.name,
+      archivedAt: customers.archivedAt,
     })
     .from(customers)
     .leftJoin(users, eq(customers.accountOwnerId, users.id))
@@ -255,11 +296,11 @@ export async function listProspectFilterOptions() {
     db
       .selectDistinct({ value: customers.billingState })
       .from(customers)
-      .where(and(eq(customers.status, "PROSPECT"), isNotNull(customers.billingState))),
+      .where(and(eq(customers.status, "PROSPECT"), isNull(customers.archivedAt), isNotNull(customers.billingState))),
     db
       .selectDistinct({ value: customers.industry })
       .from(customers)
-      .where(and(eq(customers.status, "PROSPECT"), isNotNull(customers.industry))),
+      .where(and(eq(customers.status, "PROSPECT"), isNull(customers.archivedAt), isNotNull(customers.industry))),
   ]);
   return {
     states: states.map((s) => s.value).filter((v): v is string => !!v).sort(),

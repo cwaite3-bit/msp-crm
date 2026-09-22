@@ -77,6 +77,27 @@ export function formatAddressLine(address: {
   return [address.billingStreet, cityStateZip].filter(Boolean).join(", ");
 }
 
+// Opens a single-location pin in Google Maps — the "Map it" link on a
+// prospect's address.
+export function googleMapsSearchUrl(query: string): string {
+  const params = new URLSearchParams({ api: "1", query });
+  return `https://www.google.com/maps/search/?${params.toString()}`;
+}
+
+// Plans a driving route through several prospects for a "visit these today"
+// trip. No origin is set, so Google Maps starts from wherever the visitor
+// currently is; the last stop becomes the destination and everything else
+// in between becomes a waypoint. Google's free directions URL supports at
+// most 9 waypoints (10 addressed stops total) — callers should cap the
+// list before calling this.
+export function googleMapsDirectionsUrl(stops: string[]): string {
+  const destination = stops[stops.length - 1];
+  const waypoints = stops.slice(0, -1);
+  const params = new URLSearchParams({ api: "1", destination, travelmode: "driving" });
+  if (waypoints.length) params.set("waypoints", waypoints.join("|"));
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
 export function slugify(input: string) {
   return input
     .toLowerCase()

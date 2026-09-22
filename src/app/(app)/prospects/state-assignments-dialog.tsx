@@ -41,7 +41,20 @@ export function StateAssignmentsDialog({
       // thing to importProspects, so there's no reason to keep the row.
       const cleaned = Object.fromEntries(Object.entries(assignments).filter(([, v]) => v));
       await updateStateAssignments(cleaned);
-      toast.success("Territory assignments saved");
+      // Saving a rule only controls *future* imports on its own — it never
+      // touches prospects already sitting in the system. Rolling the
+      // catch-up into Save (rather than leaving it to the separate "Apply
+      // now" button below) means the common case — "assign AZ to John" then
+      // expecting AZ prospects to show up under John right away — actually
+      // works, instead of silently doing nothing until that second button
+      // is clicked. This only ever fills in prospects with no owner yet, so
+      // it's safe to run every time.
+      const result = await applyStateAssignmentsToExisting();
+      toast.success(
+        result.updated > 0
+          ? `Territory assignments saved — assigned ${result.updated} existing prospect${result.updated === 1 ? "" : "s"}`
+          : "Territory assignments saved"
+      );
       router.refresh();
     });
   }
@@ -69,8 +82,10 @@ export function StateAssignmentsDialog({
         <DialogHeader>
           <DialogTitle>Assign staff by state</DialogTitle>
           <DialogDescription>
-            Set a default owner per state. New imports into that state are assigned automatically —
-            use &ldquo;Apply now&rdquo; below to catch up prospects you already have.
+            Set a default owner per state. Saving assigns it to matching prospects that don&rsquo;t already
+            have an owner (including ones you already have) and every future import into that state.
+            Use &ldquo;Apply now&rdquo; below if you add prospects some other way later and want to catch them up
+            without changing these rules.
           </DialogDescription>
         </DialogHeader>
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -15,10 +16,35 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, ChevronUp, ArrowUpDown, MoreHorizontal, ArrowRight, UserCheck, UserPlus, Phone, MapPin } from "lucide-react";
-import { formatCurrency, formatDate, formatAddressLine } from "@/lib/utils";
+import {
+  ChevronDown,
+  ChevronUp,
+  ArrowUpDown,
+  MoreHorizontal,
+  ArrowRight,
+  UserCheck,
+  UserPlus,
+  Phone,
+  MapPin,
+  Map as MapIcon,
+  Archive,
+  ArchiveRestore,
+} from "lucide-react";
+import { formatCurrency, formatDate, formatAddressLine, googleMapsSearchUrl, googleMapsDirectionsUrl } from "@/lib/utils";
 import { PROSPECT_STAGES, STAGE_LABELS, STAGE_BADGE_VARIANT, confidenceBadgeVariant, type ProspectStage } from "@/lib/prospect";
-import { updateProspectStage, convertProspectStatus, assignProspectOwner } from "@/server/actions/customers";
+import {
+  updateProspectStage,
+  convertProspectStatus,
+  assignProspectOwner,
+  archiveCustomer,
+  unarchiveCustomer,
+} from "@/server/actions/customers";
+
+// Google Maps' free directions URL supports at most 9 waypoints plus a
+// destination (10 addressed stops) when no origin is given — it falls back
+// to the visitor's current location as the starting point, which is exactly
+// what "plan today's visits" wants.
+const MAX_MAP_STOPS = 10;
 
 export type ProspectRow = {
   id: string;
@@ -36,15 +62,68 @@ export type ProspectRow = {
   researchConfidence: string | null;
   accountOwnerId: string | null;
   ownerName: string | null;
+  archivedAt: Date | string | null;
 };
 
 export type StaffOption = { id: string; name: string };
 
-export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]; staff: StaffOption[]; hasFilters: boolean }) {
+// What to hand Google as the location text for one prospect — the street
+// address when we have one, falling back to city/state, and the company
+// name folded in so a bare "123 Main St" resolves to the right business
+// rather than just the nearest point on the map.
+function mapQuery(row: ProspectRow): string | null {
+  const address = formatAddressLine(row);
+  const location = address || [row.billingCity, row.billingState].filter(Boolean).join(", ");
+  if (!location) return null;
+  return `${row.name}, ${location}`;
+}
+
+export function ProspectTable({
+  rows,
+  staff,
+  hasFilters,
+  showArchived = false,
+}: {
+  rows: ProspectRow[];
+  staff: StaffOption[];
+  hasFilters: boolean;
+  showArchived?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const mappableRows = useMemo(() => rows.filter((r) => mapQuery(r)), [rows]);
+  const allMappableSelected = mappableRows.length > 0 && mappableRows.every((r) => selected.has(r.id));
+
+  function toggleRow(id: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    setSelected(checked ? new Set(mappableRows.map((r) => r.id)) : new Set());
+  }
+
+  function handleMapRoute() {
+    let selectedRows = rows.filter((r) => selected.has(r.id) && mapQuery(r));
+    if (selectedRows.length > MAX_MAP_STOPS) {
+      toast.warning(`Google Maps allows ${MAX_MAP_STOPS} stops at once — mapping the first ${MAX_MAP_STOPS} selected.`);
+      selectedRows = selectedRows.slice(0, MAX_MAP_STOPS);
+    }
+    const queries = selectedRows.map((r) => mapQuery(r)!);
+    if (queries.length === 1) {
+      window.open(googleMapsSearchUrl(queries[0]), "_blank", "noopener");
+    } else {
+      window.open(googleMapsDirectionsUrl(queries), "_blank", "noopener");
+    }
+  }
 
   const currentSort = searchParams.get("sort");
   const currentDir = searchParams.get("dir");
@@ -93,13 +172,57 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
     });
   }
 
+  // Archiving is reversible (see archiveCustomer), so this is a light
+  // heads-up rather than the harder confirmation a real delete would need —
+  // it still asks, since it's a click buried in a dropdown menu.
+  function handleArchive(row: ProspectRow) {
+    if (!window.confirm(`Archive "${row.name}"? It'll disappear from the Prospects list, but you can restore it anytime from Archived.`)) {
+      return;
+    }
+    startTransition(async () => {
+      await archiveCustomer(row.id);
+      toast.success(`${row.name} archived`);
+      router.refresh();
+    });
+  }
+
+  function handleUnarchive(row: ProspectRow) {
+    startTransition(async () => {
+      await unarchiveCustomer(row.id);
+      toast.success(`${row.name} restored`);
+      router.refresh();
+    });
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   return (
-    <Table>
+    <div>
+      {selected.size > 0 && (
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2">
+          <span className="text-sm text-slate-600">{selected.size} selected</span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+            <Button size="sm" onClick={handleMapRoute}>
+              <MapIcon className="h-4 w-4" /> Map route
+            </Button>
+          </div>
+        </div>
+      )}
+      <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-10">
+            <Checkbox
+              checked={allMappableSelected}
+              onCheckedChange={(checked) => toggleAll(checked === true)}
+              disabled={mappableRows.length === 0}
+              aria-label="Select all mappable prospects"
+            />
+          </TableHead>
           <TableHead>Name</TableHead>
           <TableHead>Stage</TableHead>
           <TableHead>Est. monthly value</TableHead>
@@ -125,8 +248,17 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
           const followUp = row.nextFollowUpAt ? new Date(row.nextFollowUpAt) : null;
           const overdue = followUp ? followUp < today : false;
           const addressLine = formatAddressLine(row);
+          const query = mapQuery(row);
           return (
             <TableRow key={row.id} className={pending ? "opacity-70" : undefined}>
+              <TableCell>
+                <Checkbox
+                  checked={selected.has(row.id)}
+                  onCheckedChange={(checked) => toggleRow(row.id, checked === true)}
+                  disabled={!query}
+                  aria-label={`Select ${row.name}`}
+                />
+              </TableCell>
               <TableCell>
                 <Link href={`/customers/${row.id}`} className="font-medium text-slate-900 hover:underline">
                   {row.name}
@@ -140,6 +272,16 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
                 {addressLine && (
                   <div className="flex items-center gap-1 text-xs text-slate-400">
                     <MapPin className="h-3 w-3" /> {addressLine}
+                    {query && (
+                      <a
+                        href={googleMapsSearchUrl(query)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-1 text-slate-400 underline hover:text-slate-600"
+                      >
+                        Map it
+                      </a>
+                    )}
                   </div>
                 )}
               </TableCell>
@@ -210,12 +352,24 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleConvert(row, "ACTIVE")}>
-                      <UserCheck className="h-4 w-4" /> Convert to Customer
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleConvert(row, "LEAD")}>
-                      <ArrowRight className="h-4 w-4" /> Convert to Lead
-                    </DropdownMenuItem>
+                    {showArchived ? (
+                      <DropdownMenuItem onClick={() => handleUnarchive(row)}>
+                        <ArchiveRestore className="h-4 w-4" /> Restore
+                      </DropdownMenuItem>
+                    ) : (
+                      <>
+                        <DropdownMenuItem onClick={() => handleConvert(row, "ACTIVE")}>
+                          <UserCheck className="h-4 w-4" /> Convert to Customer
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleConvert(row, "LEAD")}>
+                          <ArrowRight className="h-4 w-4" /> Convert to Lead
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleArchive(row)}>
+                          <Archive className="h-4 w-4" /> Archive
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link href={`/customers/${row.id}`}>View details</Link>
@@ -228,12 +382,13 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
         })}
         {rows.length === 0 && (
           <TableRow>
-            <TableCell colSpan={8} className="py-8 text-center text-slate-500">
+            <TableCell colSpan={9} className="py-8 text-center text-slate-500">
               {hasFilters ? "No prospects match these filters." : "No prospects yet. Add one or import a spreadsheet to get started."}
             </TableCell>
           </TableRow>
         )}
       </TableBody>
-    </Table>
+      </Table>
+    </div>
   );
 }

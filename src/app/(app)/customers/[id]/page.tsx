@@ -13,6 +13,7 @@ import { NewQuoteButton } from "@/app/(app)/quotes/new-quote-button";
 import { EditCustomerForm } from "./edit-customer-form";
 import { ContactsPanel } from "./contacts-panel";
 import { NotesPanel } from "./notes-panel";
+import { ArchiveCustomerButton } from "./archive-customer-button";
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -47,12 +48,16 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                 {STAGE_LABELS[customer.stage as ProspectStage]}
               </Badge>
             )}
+            {customer.archivedAt && <Badge variant="outline">Archived</Badge>}
           </div>
           <p className="text-sm text-slate-500">
             {customer.industry || "No industry set"} {customer.website ? `· ${customer.website}` : ""}
           </p>
         </div>
-        <NewQuoteButton customerId={customer.id} contacts={customerContacts} />
+        <div className="flex items-center gap-2">
+          <ArchiveCustomerButton customerId={customer.id} name={customer.name} archived={!!customer.archivedAt} />
+          <NewQuoteButton customerId={customer.id} contacts={customerContacts} />
+        </div>
       </div>
 
       <Tabs defaultValue="overview">
