@@ -15,10 +15,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, MoreHorizontal, ArrowRight, UserCheck } from "lucide-react";
+import { ChevronDown, MoreHorizontal, ArrowRight, UserCheck, UserPlus } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PROSPECT_STAGES, STAGE_LABELS, STAGE_BADGE_VARIANT, type ProspectStage } from "@/lib/prospect";
-import { updateProspectStage, convertProspectStatus } from "@/server/actions/customers";
+import { updateProspectStage, convertProspectStatus, assignProspectOwner } from "@/server/actions/customers";
 
 export type ProspectRow = {
   id: string;
@@ -28,11 +28,13 @@ export type ProspectRow = {
   nextFollowUpAt: Date | string | null;
   source: string | null;
   industry: string | null;
-  phone: string | null;
-  email: string | null;
+  accountOwnerId: string | null;
+  ownerName: string | null;
 };
 
-export function ProspectTable({ rows }: { rows: ProspectRow[] }) {
+export type StaffOption = { id: string; name: string };
+
+export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]; staff: StaffOption[]; hasFilters: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -61,6 +63,14 @@ export function ProspectTable({ rows }: { rows: ProspectRow[] }) {
     });
   }
 
+  function handleAssign(row: ProspectRow, ownerId: string | null, ownerName: string | null) {
+    startTransition(async () => {
+      await assignProspectOwner(row.id, ownerId);
+      toast.success(ownerId ? `Assigned to ${ownerName}` : `Unassigned ${row.name}`);
+      router.refresh();
+    });
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -73,6 +83,7 @@ export function ProspectTable({ rows }: { rows: ProspectRow[] }) {
           <TableHead>Est. monthly value</TableHead>
           <TableHead>Next follow-up</TableHead>
           <TableHead>Source</TableHead>
+          <TableHead>Assigned to</TableHead>
           <TableHead className="w-10" />
         </TableRow>
       </TableHeader>
@@ -117,6 +128,33 @@ export function ProspectTable({ rows }: { rows: ProspectRow[] }) {
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
+                    <button className="inline-flex items-center gap-1 text-sm" disabled={pending}>
+                      {row.ownerName ? (
+                        <span className="text-slate-700">{row.ownerName}</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-slate-400">
+                          <UserPlus className="h-3.5 w-3.5" /> Unassigned
+                        </span>
+                      )}
+                      <ChevronDown className="h-3 w-3 text-slate-400" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => handleAssign(row, null, null)} disabled={!row.accountOwnerId}>
+                      Unassigned
+                    </DropdownMenuItem>
+                    {staff.map((s) => (
+                      <DropdownMenuItem key={s.id} onClick={() => handleAssign(row, s.id, s.name)} disabled={s.id === row.accountOwnerId}>
+                        {s.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" disabled={pending}>
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
@@ -140,8 +178,8 @@ export function ProspectTable({ rows }: { rows: ProspectRow[] }) {
         })}
         {rows.length === 0 && (
           <TableRow>
-            <TableCell colSpan={6} className="py-8 text-center text-slate-500">
-              No prospects yet. Add one or import a spreadsheet to get started.
+            <TableCell colSpan={7} className="py-8 text-center text-slate-500">
+              {hasFilters ? "No prospects match these filters." : "No prospects yet. Add one or import a spreadsheet to get started."}
             </TableCell>
           </TableRow>
         )}

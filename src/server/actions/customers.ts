@@ -1,14 +1,15 @@
 "use server";
 
 import { db } from "@/server/db";
-import { customers, contacts, notes } from "@/server/db/schema";
+import { customers, contacts, notes, users } from "@/server/db/schema";
 import { auth } from "@/auth";
-import { eq, and, desc, ilike, or } from "drizzle-orm";
+import { eq, and, desc, ilike, or, isNull, isNotNull, gte, lte } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import * as XLSX from "xlsx";
-import { PROSPECT_STAGES, type ProspectStage } from "@/lib/prospect";
+import { PROSPECT_STAGES, SIZE_BUCKETS, type ProspectStage, type SizeBucketValue } from "@/lib/prospect";
+import { formatDate } from "@/lib/utils";
 
 async function requireUser() {
   const session = await auth();
@@ -148,34 +149,102 @@ export async function searchCustomers(query: string) {
 // its status — nothing to copy or migrate. `stage` tracks where in the
 // sales pipeline a prospect sits, independent of that status.
 
-export async function listProspects() {
-  await requireUser();
-  return db.select().from(customers).where(eq(customers.status, "PROSPECT")).orderBy(desc(customers.createdAt));
+export type ProspectFilters = {
+  state?: string;
+  stage?: ProspectStage;
+  industry?: string;
+  size?: SizeBucketValue;
+  ownerId?: string; // a real users.id, or the sentinel "unassigned"
+};
+
+// Resolves a SIZE_BUCKETS value into the employeeCount range condition it
+// represents — "unknown" means no employeeCount was ever recorded (the
+// common case for a research import whose size column was qualitative text
+// rather than a clean numeric range; see parseEmployeeEstimate below).
+function sizeBucketCondition(size: SizeBucketValue) {
+  if (size === "unknown") return isNull(customers.employeeCount);
+  const bucket = SIZE_BUCKETS.find((b) => b.value === size);
+  if (!bucket || bucket.min === null) return undefined;
+  return bucket.max !== null
+    ? and(gte(customers.employeeCount, bucket.min), lte(customers.employeeCount, bucket.max))
+    : gte(customers.employeeCount, bucket.min);
 }
 
-export async function searchProspects(query: string) {
+export async function searchProspects(query: string, filters: ProspectFilters = {}) {
   await requireUser();
   const trimmed = query.trim();
-  const statusFilter = eq(customers.status, "PROSPECT");
-  if (!trimmed) {
-    return db.select().from(customers).where(statusFilter).orderBy(desc(customers.createdAt)).limit(200);
+
+  const conditions = [eq(customers.status, "PROSPECT")];
+  if (trimmed) {
+    conditions.push(
+      or(
+        ilike(customers.name, `%${trimmed}%`),
+        ilike(customers.email, `%${trimmed}%`),
+        ilike(customers.phone, `%${trimmed}%`),
+        ilike(customers.industry, `%${trimmed}%`)
+      )!
+    );
   }
+  if (filters.state) conditions.push(eq(customers.billingState, filters.state));
+  if (filters.stage) conditions.push(eq(customers.stage, filters.stage));
+  if (filters.industry) conditions.push(eq(customers.industry, filters.industry));
+  if (filters.size) {
+    const sizeCondition = sizeBucketCondition(filters.size);
+    if (sizeCondition) conditions.push(sizeCondition);
+  }
+  if (filters.ownerId === "unassigned") conditions.push(isNull(customers.accountOwnerId));
+  else if (filters.ownerId) conditions.push(eq(customers.accountOwnerId, filters.ownerId));
+
   return db
-    .select()
+    .select({
+      id: customers.id,
+      name: customers.name,
+      stage: customers.stage,
+      estimatedMonthlyValue: customers.estimatedMonthlyValue,
+      nextFollowUpAt: customers.nextFollowUpAt,
+      source: customers.source,
+      industry: customers.industry,
+      billingState: customers.billingState,
+      accountOwnerId: customers.accountOwnerId,
+      ownerName: users.name,
+    })
     .from(customers)
-    .where(
-      and(
-        statusFilter,
-        or(
-          ilike(customers.name, `%${trimmed}%`),
-          ilike(customers.email, `%${trimmed}%`),
-          ilike(customers.phone, `%${trimmed}%`),
-          ilike(customers.industry, `%${trimmed}%`)
-        )
-      )
-    )
+    .leftJoin(users, eq(customers.accountOwnerId, users.id))
+    .where(and(...conditions))
     .orderBy(desc(customers.createdAt))
     .limit(200);
+}
+
+// Distinct filter-dropdown option values, scoped to actual PROSPECT rows so
+// the State/Industry filters never offer a choice that would return zero
+// results.
+export async function listProspectFilterOptions() {
+  await requireUser();
+  const [states, industries] = await Promise.all([
+    db
+      .selectDistinct({ value: customers.billingState })
+      .from(customers)
+      .where(and(eq(customers.status, "PROSPECT"), isNotNull(customers.billingState))),
+    db
+      .selectDistinct({ value: customers.industry })
+      .from(customers)
+      .where(and(eq(customers.status, "PROSPECT"), isNotNull(customers.industry))),
+  ]);
+  return {
+    states: states.map((s) => s.value).filter((v): v is string => !!v).sort(),
+    industries: industries.map((s) => s.value).filter((v): v is string => !!v).sort(),
+  };
+}
+
+// Assigns (or, passing null, unassigns) which staff member owns working a
+// prospect. Kept as its own action — rather than folding into the general
+// updateCustomer — so the Prospects list's row-level "Assign to" dropdown
+// can reassign in one click without going through the full edit form.
+export async function assignProspectOwner(customerId: string, ownerId: string | null) {
+  await requireUser();
+  await db.update(customers).set({ accountOwnerId: ownerId, updatedAt: new Date() }).where(eq(customers.id, customerId));
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/prospects");
 }
 
 // Moves a prospect through the pipeline. `lostReason` only sticks when the
@@ -247,6 +316,24 @@ function matchStage(raw: string): ProspectStage {
   return found || "NEW";
 }
 
+// Best-effort numeric read on a size column that's often qualitative text
+// ("Small agency", "Multi-staff practice") rather than a clean range — only
+// ever used to bucket prospects for the size filter (see SIZE_BUCKETS in
+// lib/prospect.ts), never displayed as if it were a verified headcount. A
+// range like "11-50" or "51-200 organization-wide" resolves to its low end
+// (conservative, and lines up with the filter buckets' own boundaries); a
+// single number or "500+" resolves to that number; anything with no digits
+// at all (the majority of rows in a typical research export) returns null,
+// which the size filter surfaces as "Unknown size" rather than guessing.
+function parseEmployeeEstimate(raw: string): number | null {
+  if (!raw) return null;
+  const rangeMatch = raw.match(/(\d[\d,]*)\s*(?:-|–|to)\s*(\d[\d,]*)/i);
+  if (rangeMatch) return Number(rangeMatch[1].replace(/,/g, ""));
+  const singleMatch = raw.match(/(\d[\d,]*)\s*\+?/);
+  if (singleMatch) return Number(singleMatch[1].replace(/,/g, ""));
+  return null;
+}
+
 export type ImportProspectsResult = {
   ok: boolean;
   imported: number;
@@ -271,12 +358,30 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
   }
 
   let rows: Record<string, unknown>[];
+  let batchResearchedAt: Date | null = null;
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) return { ok: false, imported: 0, skipped: 0, errors: ["The file has no sheets"] };
     rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: "" });
+
+    // Some research-style exports (e.g. a prospecting sweep) include a
+    // second "notes" sheet as label/value pairs with a row like
+    // "Research date" | "2026-09-21" describing when the whole batch was
+    // researched, rather than a per-row date column. If one of the other
+    // sheets has that, use it as every imported row's lastResearchedAt
+    // unless a per-row column overrides it below.
+    for (const sheetName of workbook.SheetNames.slice(1)) {
+      const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], { header: 1 });
+      for (const r of sheetRows) {
+        const label = String(r?.[0] ?? "").trim().toLowerCase();
+        if (label === "research date" || label === "last researched") {
+          const parsed = new Date(String(r?.[1] ?? ""));
+          if (!Number.isNaN(parsed.getTime())) batchResearchedAt = parsed;
+        }
+      }
+    }
   } catch {
     return { ok: false, imported: 0, skipped: 0, errors: ["Could not read that file — is it a valid .xlsx or .csv?"] };
   }
@@ -311,7 +416,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
     const stageRaw = pickField(row, ["stage", "status", "pipeline stage", "sales stage"]);
     const contactFirstName = pickField(row, ["contact first name", "first name", "contact firstname"]);
     const contactLastName = pickField(row, ["contact last name", "last name", "contact lastname"]);
-    const contactFullName = pickField(row, ["contact name", "contact", "contact person"]);
+    const contactFullName = pickField(row, ["contact name", "contact", "contact person", "decision maker"]);
     const [splitFirst, ...splitRest] = contactFullName ? contactFullName.split(/\s+/) : [];
 
     const estimatedRaw = pickField(row, ["estimated value", "est. value", "est value", "deal size", "value", "estimated mrr", "mrr"]);
@@ -323,6 +428,59 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
       if (!Number.isNaN(parsedDate.getTime())) nextFollowUpAt = parsedDate;
     }
 
+    // Pre-qualification research fields — populated by research-style
+    // exports (a prospecting sweep) rather than a plain contact list.
+    // There's no dedicated column for any of this (see the note above the
+    // Prospects section on why the data model is deliberately just
+    // `customers` + `contacts` + `notes`), so it's logged as one neatly
+    // organized activity note on the imported customer instead — a short
+    // "at a glance" block of facts, then each longer narrative field under
+    // its own heading, blank-line separated rather than run together.
+    // NotesPanel renders a note's body with `whitespace-pre-wrap`, so this
+    // formatting (line breaks, blank lines) displays exactly as built here.
+    const externalId = pickField(row, ["prospect id", "external id", "id"]);
+    const researchConfidence = pickField(row, ["confidence", "research confidence"]);
+    const researchSourceUrl = pickField(row, ["primary source", "source url", "research source", "source"]);
+    const existingItProvider = pickField(row, ["existing it provider", "current it provider", "incumbent provider", "incumbent it"]);
+    const rowResearchedRaw = pickField(row, ["last researched", "research date", "date researched"]);
+    let researchedAt = batchResearchedAt;
+    if (rowResearchedRaw) {
+      const parsedDate = new Date(rowResearchedRaw);
+      if (!Number.isNaN(parsedDate.getTime())) researchedAt = parsedDate;
+    }
+
+    // Employee Estimate in a research export is typically a range ("11-50"),
+    // not a single verified count — the field guide explicitly warns not to
+    // treat it as exact, so it's folded into the research note below rather
+    // than forced into the numeric employeeCount column.
+    const employeeEstimate = pickField(row, ["employee estimate", "employee range", "headcount estimate"]);
+    const employeeEvidence = pickField(row, ["employee evidence"]);
+    const genericNotes = pickField(row, ["notes", "note", "description", "comments"]);
+
+    const factLines: string[] = [];
+    if (externalId) factLines.push(`Prospect ID: ${externalId}`);
+    if (researchConfidence) factLines.push(`Confidence: ${researchConfidence}`);
+    if (existingItProvider) factLines.push(`Existing IT provider: ${existingItProvider}`);
+    if (researchSourceUrl) factLines.push(`Source: ${researchSourceUrl}`);
+    if (researchedAt) factLines.push(`Researched: ${formatDate(researchedAt)}`);
+    if (employeeEstimate) factLines.push(`Employee estimate: ${employeeEstimate}${employeeEvidence ? ` (${employeeEvidence})` : ""}`);
+
+    const narrativeSections: [string, string][] = [
+      ["Business / IT signals", pickField(row, ["business / it signals", "business/it signals", "business it signals"])],
+      ["Security / complexity signals", pickField(row, ["security / complexity signals", "security/complexity signals"])],
+      ["Decision-maker notes", pickField(row, ["decision-maker notes", "decision maker notes"])],
+      ["Qualification notes", pickField(row, ["qualification notes"])],
+      ["IT / growth intent signal", pickField(row, ["it / growth intent signal", "it/growth intent signal"])],
+    ];
+
+    const noteBlocks: string[] = [];
+    if (factLines.length) noteBlocks.push(factLines.join("\n"));
+    for (const [label, value] of narrativeSections) {
+      if (value) noteBlocks.push(`${label}:\n${value}`);
+    }
+    if (genericNotes) noteBlocks.push(genericNotes);
+    const researchNote = noteBlocks.join("\n\n");
+
     try {
       const [customer] = await db
         .insert(customers)
@@ -332,10 +490,11 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
           stage: matchStage(stageRaw || "NEW"),
           estimatedMonthlyValue: estimatedValue || null,
           nextFollowUpAt,
+          employeeCount: parseEmployeeEstimate(employeeEstimate),
           industry: pickField(row, ["industry"]) || null,
           website: pickField(row, ["website", "url", "web site"]) || null,
-          phone: pickField(row, ["phone", "company phone", "phone number"]) || null,
-          email: pickField(row, ["email", "company email"]) || null,
+          phone: pickField(row, ["phone", "company phone", "phone number", "main phone"]) || null,
+          email: pickField(row, ["email", "company email", "public business email"]) || null,
           source: pickField(row, ["source", "lead source"]) || null,
           billingStreet: pickField(row, ["street", "address", "billing street"]) || null,
           billingCity: pickField(row, ["city", "billing city"]) || null,
@@ -361,9 +520,8 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
         });
       }
 
-      const notesText = pickField(row, ["notes", "note", "description", "comments"]);
-      if (notesText) {
-        await db.insert(notes).values({ customerId: customer.id, authorId: user.id, body: notesText, type: "NOTE" });
+      if (researchNote) {
+        await db.insert(notes).values({ customerId: customer.id, authorId: user.id, body: researchNote, type: "NOTE" });
       }
 
       existingNames.add(name.toLowerCase());
