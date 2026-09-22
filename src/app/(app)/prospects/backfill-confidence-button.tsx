@@ -29,9 +29,9 @@ export function BackfillConfidenceButton() {
   }
 
   return (
-    <Button variant="ghost" size="sm" onClick={handleClick} disabled={pending}>
+    <Button variant="ghost" size="sm" onClick={handleClick} disabled={pending} title="Recover confidence from notes">
       {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-      Recover confidence from notes
+      <span className="hidden sm:inline">Recover confidence from notes</span>
     </Button>
   );
 }

@@ -78,6 +78,164 @@ function mapQuery(row: ProspectRow): string | null {
   return `${row.name}, ${location}`;
 }
 
+// The row-level interactive bits (stage/owner dropdowns, the "..." actions
+// menu) are shared verbatim between the desktop table row and the mobile
+// card below — factored out here so the two layouts can't quietly drift
+// apart from each other as they get edited over time.
+
+function StageMenu({
+  row,
+  pending,
+  onChange,
+}: {
+  row: ProspectRow;
+  pending: boolean;
+  onChange: (row: ProspectRow, stage: ProspectStage) => void;
+}) {
+  const stage = (row.stage as ProspectStage) || "NEW";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="inline-flex items-center gap-1" disabled={pending}>
+          <Badge variant={STAGE_BADGE_VARIANT[stage]}>{STAGE_LABELS[stage]}</Badge>
+          <ChevronDown className="h-3 w-3 text-slate-400" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuLabel>Move to stage</DropdownMenuLabel>
+        {PROSPECT_STAGES.map((s) => (
+          <DropdownMenuItem key={s} onClick={() => onChange(row, s)} disabled={s === stage}>
+            {STAGE_LABELS[s]}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function OwnerMenu({
+  row,
+  staff,
+  pending,
+  onChange,
+}: {
+  row: ProspectRow;
+  staff: StaffOption[];
+  pending: boolean;
+  onChange: (row: ProspectRow, ownerId: string | null, ownerName: string | null) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="inline-flex items-center gap-1 text-sm" disabled={pending}>
+          {row.ownerName ? (
+            <span className="text-slate-700">{row.ownerName}</span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-slate-400">
+              <UserPlus className="h-3.5 w-3.5" /> Unassigned
+            </span>
+          )}
+          <ChevronDown className="h-3 w-3 text-slate-400" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => onChange(row, null, null)} disabled={!row.accountOwnerId}>
+          Unassigned
+        </DropdownMenuItem>
+        {staff.map((s) => (
+          <DropdownMenuItem key={s.id} onClick={() => onChange(row, s.id, s.name)} disabled={s.id === row.accountOwnerId}>
+            {s.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RowMenu({
+  row,
+  pending,
+  showArchived,
+  onConvert,
+  onArchive,
+  onUnarchive,
+}: {
+  row: ProspectRow;
+  pending: boolean;
+  showArchived: boolean;
+  onConvert: (row: ProspectRow, target: "LEAD" | "ACTIVE") => void;
+  onArchive: (row: ProspectRow) => void;
+  onUnarchive: (row: ProspectRow) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" disabled={pending}>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {showArchived ? (
+          <DropdownMenuItem onClick={() => onUnarchive(row)}>
+            <ArchiveRestore className="h-4 w-4" /> Restore
+          </DropdownMenuItem>
+        ) : (
+          <>
+            <DropdownMenuItem onClick={() => onConvert(row, "ACTIVE")}>
+              <UserCheck className="h-4 w-4" /> Convert to Customer
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onConvert(row, "LEAD")}>
+              <ArrowRight className="h-4 w-4" /> Convert to Lead
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onArchive(row)}>
+              <Archive className="h-4 w-4" /> Archive
+            </DropdownMenuItem>
+          </>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href={`/customers/${row.id}`}>View details</Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function NameBlock({ row }: { row: ProspectRow }) {
+  const addressLine = formatAddressLine(row);
+  const query = mapQuery(row);
+  return (
+    <div>
+      <Link href={`/customers/${row.id}`} className="font-medium text-slate-900 hover:underline">
+        {row.name}
+      </Link>
+      {row.industry && <div className="text-xs text-slate-500">{row.industry}</div>}
+      {row.phone && (
+        <div className="flex items-center gap-1 text-xs text-slate-400">
+          <Phone className="h-3 w-3" /> {row.phone}
+        </div>
+      )}
+      {addressLine && (
+        <div className="flex items-center gap-1 text-xs text-slate-400">
+          <MapPin className="h-3 w-3" /> {addressLine}
+          {query && (
+            <a
+              href={googleMapsSearchUrl(query)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-1 text-slate-400 underline hover:text-slate-600"
+            >
+              Map it
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProspectTable({
   rows,
   staff,
@@ -197,6 +355,10 @@ export function ProspectTable({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const emptyMessage = hasFilters
+    ? "No prospects match these filters."
+    : "No prospects yet. Add one or import a spreadsheet to get started.";
+
   return (
     <div>
       {selected.size > 0 && (
@@ -212,183 +374,168 @@ export function ProspectTable({
           </div>
         </div>
       )}
-      <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-10">
+
+      {/* Desktop / tablet: the full table, sm breakpoint and up. */}
+      <div className="hidden sm:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={allMappableSelected}
+                  onCheckedChange={(checked) => toggleAll(checked === true)}
+                  disabled={mappableRows.length === 0}
+                  aria-label="Select all mappable prospects"
+                />
+              </TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Stage</TableHead>
+              <TableHead>Est. monthly value</TableHead>
+              <TableHead>Next follow-up</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead>
+                <Link href={sortHref("confidence")} className="inline-flex items-center gap-1 hover:underline">
+                  Confidence
+                  {currentSort === "confidence" ? (
+                    currentDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="h-3 w-3 text-slate-400" />
+                  )}
+                </Link>
+              </TableHead>
+              <TableHead>Assigned to</TableHead>
+              <TableHead className="w-10" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => {
+              const followUp = row.nextFollowUpAt ? new Date(row.nextFollowUpAt) : null;
+              const overdue = followUp ? followUp < today : false;
+              const query = mapQuery(row);
+              return (
+                <TableRow key={row.id} className={pending ? "opacity-70" : undefined}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selected.has(row.id)}
+                      onCheckedChange={(checked) => toggleRow(row.id, checked === true)}
+                      disabled={!query}
+                      aria-label={`Select ${row.name}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <NameBlock row={row} />
+                  </TableCell>
+                  <TableCell>
+                    <StageMenu row={row} pending={pending} onChange={handleStageChange} />
+                  </TableCell>
+                  <TableCell className="text-slate-500">
+                    {row.estimatedMonthlyValue ? formatCurrency(row.estimatedMonthlyValue) : "—"}
+                  </TableCell>
+                  <TableCell className={overdue ? "font-medium text-red-600" : "text-slate-500"}>
+                    {followUp ? formatDate(followUp) : "—"}
+                  </TableCell>
+                  <TableCell className="text-slate-500">{row.source || "—"}</TableCell>
+                  <TableCell>
+                    {row.researchConfidence ? (
+                      <Badge variant={confidenceBadgeVariant(row.researchConfidence)}>{row.researchConfidence}</Badge>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <OwnerMenu row={row} staff={staff} pending={pending} onChange={handleAssign} />
+                  </TableCell>
+                  <TableCell>
+                    <RowMenu
+                      row={row}
+                      pending={pending}
+                      showArchived={showArchived}
+                      onConvert={handleConvert}
+                      onArchive={handleArchive}
+                      onUnarchive={handleUnarchive}
+                    />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {rows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={9} className="py-8 text-center text-slate-500">
+                  {emptyMessage}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Phone: a stacked card per prospect instead of a horizontally-
+          scrolling table — every field that matters fits without sideways
+          scrolling, and the two dropdowns / actions menu are the exact same
+          components as the desktop table's, just laid out vertically. */}
+      <div className="divide-y divide-slate-100 sm:hidden">
+        {rows.length > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-500">
             <Checkbox
               checked={allMappableSelected}
               onCheckedChange={(checked) => toggleAll(checked === true)}
               disabled={mappableRows.length === 0}
               aria-label="Select all mappable prospects"
             />
-          </TableHead>
-          <TableHead>Name</TableHead>
-          <TableHead>Stage</TableHead>
-          <TableHead>Est. monthly value</TableHead>
-          <TableHead>Next follow-up</TableHead>
-          <TableHead>Source</TableHead>
-          <TableHead>
-            <Link href={sortHref("confidence")} className="inline-flex items-center gap-1 hover:underline">
-              Confidence
-              {currentSort === "confidence" ? (
-                currentDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
-              ) : (
-                <ArrowUpDown className="h-3 w-3 text-slate-400" />
-              )}
-            </Link>
-          </TableHead>
-          <TableHead>Assigned to</TableHead>
-          <TableHead className="w-10" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+            Select all
+          </div>
+        )}
         {rows.map((row) => {
-          const stage = (row.stage as ProspectStage) || "NEW";
           const followUp = row.nextFollowUpAt ? new Date(row.nextFollowUpAt) : null;
           const overdue = followUp ? followUp < today : false;
-          const addressLine = formatAddressLine(row);
           const query = mapQuery(row);
           return (
-            <TableRow key={row.id} className={pending ? "opacity-70" : undefined}>
-              <TableCell>
-                <Checkbox
-                  checked={selected.has(row.id)}
-                  onCheckedChange={(checked) => toggleRow(row.id, checked === true)}
-                  disabled={!query}
-                  aria-label={`Select ${row.name}`}
+            <div key={row.id} className={`flex flex-col gap-3 p-4 ${pending ? "opacity-70" : ""}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={selected.has(row.id)}
+                    onCheckedChange={(checked) => toggleRow(row.id, checked === true)}
+                    disabled={!query}
+                    aria-label={`Select ${row.name}`}
+                    className="mt-1"
+                  />
+                  <NameBlock row={row} />
+                </div>
+                <RowMenu
+                  row={row}
+                  pending={pending}
+                  showArchived={showArchived}
+                  onConvert={handleConvert}
+                  onArchive={handleArchive}
+                  onUnarchive={handleUnarchive}
                 />
-              </TableCell>
-              <TableCell>
-                <Link href={`/customers/${row.id}`} className="font-medium text-slate-900 hover:underline">
-                  {row.name}
-                </Link>
-                {row.industry && <div className="text-xs text-slate-500">{row.industry}</div>}
-                {row.phone && (
-                  <div className="flex items-center gap-1 text-xs text-slate-400">
-                    <Phone className="h-3 w-3" /> {row.phone}
-                  </div>
-                )}
-                {addressLine && (
-                  <div className="flex items-center gap-1 text-xs text-slate-400">
-                    <MapPin className="h-3 w-3" /> {addressLine}
-                    {query && (
-                      <a
-                        href={googleMapsSearchUrl(query)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-1 text-slate-400 underline hover:text-slate-600"
-                      >
-                        Map it
-                      </a>
-                    )}
-                  </div>
-                )}
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="inline-flex items-center gap-1" disabled={pending}>
-                      <Badge variant={STAGE_BADGE_VARIANT[stage]}>{STAGE_LABELS[stage]}</Badge>
-                      <ChevronDown className="h-3 w-3 text-slate-400" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuLabel>Move to stage</DropdownMenuLabel>
-                    {PROSPECT_STAGES.map((s) => (
-                      <DropdownMenuItem key={s} onClick={() => handleStageChange(row, s)} disabled={s === stage}>
-                        {STAGE_LABELS[s]}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-              <TableCell className="text-slate-500">
-                {row.estimatedMonthlyValue ? formatCurrency(row.estimatedMonthlyValue) : "—"}
-              </TableCell>
-              <TableCell className={overdue ? "font-medium text-red-600" : "text-slate-500"}>
-                {followUp ? formatDate(followUp) : "—"}
-              </TableCell>
-              <TableCell className="text-slate-500">{row.source || "—"}</TableCell>
-              <TableCell>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-8 text-sm">
+                <StageMenu row={row} pending={pending} onChange={handleStageChange} />
                 {row.researchConfidence ? (
                   <Badge variant={confidenceBadgeVariant(row.researchConfidence)}>{row.researchConfidence}</Badge>
-                ) : (
-                  <span className="text-slate-400">—</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="inline-flex items-center gap-1 text-sm" disabled={pending}>
-                      {row.ownerName ? (
-                        <span className="text-slate-700">{row.ownerName}</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-slate-400">
-                          <UserPlus className="h-3.5 w-3.5" /> Unassigned
-                        </span>
-                      )}
-                      <ChevronDown className="h-3 w-3 text-slate-400" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuLabel>Assign to</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => handleAssign(row, null, null)} disabled={!row.accountOwnerId}>
-                      Unassigned
-                    </DropdownMenuItem>
-                    {staff.map((s) => (
-                      <DropdownMenuItem key={s.id} onClick={() => handleAssign(row, s.id, s.name)} disabled={s.id === row.accountOwnerId}>
-                        {s.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" disabled={pending}>
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {showArchived ? (
-                      <DropdownMenuItem onClick={() => handleUnarchive(row)}>
-                        <ArchiveRestore className="h-4 w-4" /> Restore
-                      </DropdownMenuItem>
-                    ) : (
-                      <>
-                        <DropdownMenuItem onClick={() => handleConvert(row, "ACTIVE")}>
-                          <UserCheck className="h-4 w-4" /> Convert to Customer
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleConvert(row, "LEAD")}>
-                          <ArrowRight className="h-4 w-4" /> Convert to Lead
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => handleArchive(row)}>
-                          <Archive className="h-4 w-4" /> Archive
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link href={`/customers/${row.id}`}>View details</Link>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
+                ) : null}
+                <OwnerMenu row={row} staff={staff} pending={pending} onChange={handleAssign} />
+              </div>
+
+              {(row.estimatedMonthlyValue || followUp || row.source) && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 pl-8 text-xs text-slate-500">
+                  {row.estimatedMonthlyValue && <span>{formatCurrency(row.estimatedMonthlyValue)}/mo</span>}
+                  {followUp && (
+                    <span className={overdue ? "font-medium text-red-600" : undefined}>
+                      Follow up {formatDate(followUp)}
+                    </span>
+                  )}
+                  {row.source && <span>Source: {row.source}</span>}
+                </div>
+              )}
+            </div>
           );
         })}
-        {rows.length === 0 && (
-          <TableRow>
-            <TableCell colSpan={9} className="py-8 text-center text-slate-500">
-              {hasFilters ? "No prospects match these filters." : "No prospects yet. Add one or import a spreadsheet to get started."}
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-      </Table>
+        {rows.length === 0 && <div className="py-8 text-center text-sm text-slate-500">{emptyMessage}</div>}
+      </div>
     </div>
   );
 }

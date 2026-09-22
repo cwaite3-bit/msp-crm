@@ -19,13 +19,19 @@ import { createCustomer } from "@/server/actions/customers";
 
 export function NewCustomerDialog() {
   const [open, setOpen] = useState(false);
-  const [status, setStatus] = useState("LEAD");
+  // Defaults to Active rather than Lead — this dialog is launched from the
+  // Customers screen, which now only shows won accounts (Active/Former), so
+  // a record created here without touching the dropdown should actually
+  // land in that list rather than silently landing on the Prospects screen
+  // instead. Staff who really do want to add a Lead/Prospect from here can
+  // still switch it.
+  const [status, setStatus] = useState("ACTIVE");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus /> New customer
+        <Button title="New customer">
+          <Plus /> <span className="hidden sm:inline">New customer</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">

@@ -51,8 +51,8 @@ export function ImportProspectsDialog() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="outline">
-          <Upload /> Import spreadsheet
+        <Button variant="outline" title="Import spreadsheet">
+          <Upload /> <span className="hidden sm:inline">Import spreadsheet</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">

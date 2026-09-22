@@ -29,8 +29,8 @@ export function NewProspectDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus /> New prospect
+        <Button title="New prospect">
+          <Plus /> <span className="hidden sm:inline">New prospect</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">

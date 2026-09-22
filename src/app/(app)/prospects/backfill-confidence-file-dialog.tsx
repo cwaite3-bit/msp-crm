@@ -53,8 +53,8 @@ export function BackfillConfidenceFileDialog() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <Upload className="h-4 w-4" /> Backfill confidence from file
+        <Button variant="ghost" size="sm" title="Backfill confidence from file">
+          <Upload className="h-4 w-4" /> <span className="hidden sm:inline">Backfill confidence from file</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">

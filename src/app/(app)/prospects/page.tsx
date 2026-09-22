@@ -53,7 +53,7 @@ export default async function ProspectsPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">
             {showArchived ? "Archived prospects" : "Prospects"}
@@ -61,21 +61,21 @@ export default async function ProspectsPage({
           <p className="text-sm text-slate-500">
             {showArchived
               ? "Prospects you've archived — restore one to bring it back to the active list."
-              : "Sales prospects, tracked through your pipeline until they convert."}
+              : "Leads and prospects, tracked through your pipeline until they convert to a customer."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {showArchived ? (
             <Button variant="outline" asChild>
               <Link href="/prospects">
-                <ArrowLeft /> Back to active
+                <ArrowLeft /> <span className="hidden sm:inline">Back to active</span>
               </Link>
             </Button>
           ) : (
             <>
-              <Button variant="outline" asChild>
+              <Button variant="outline" asChild title="Archived">
                 <Link href="/prospects?archived=1">
-                  <Archive /> Archived
+                  <Archive /> <span className="hidden sm:inline">Archived</span>
                 </Link>
               </Button>
               <StateAssignmentsDialog states={filterOptions.states} staff={staff} initialAssignments={stateAssignments} />
@@ -87,7 +87,7 @@ export default async function ProspectsPage({
       </div>
 
       {!showArchived && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <ProspectFilterBar
             initial={{
               q: query,

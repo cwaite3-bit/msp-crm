@@ -23,27 +23,28 @@ export default async function CustomersPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">{showArchived ? "Archived customers" : "Customers"}</h1>
           <p className="text-sm text-slate-500">
             {showArchived
               ? "Customers you've archived — restore one to bring it back to the active list."
-              : "Leads, prospects, and active accounts."}
+              : "Accounts that have actually converted — active now, or former. Leads and prospects live on the Prospects screen."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {showArchived ? (
             <Button variant="outline" asChild>
               <Link href="/customers">
-                <ArrowLeft /> Back to active
+                <ArrowLeft /> <span className="hidden sm:inline">Back to active</span>
               </Link>
             </Button>
           ) : (
             <>
-              <Button variant="outline" asChild>
+              <Button variant="outline" asChild title="Archived">
                 <Link href="/customers?archived=1">
-                  <Archive /> Archived{archivedCount > 0 ? ` (${archivedCount})` : ""}
+                  <Archive /> <span className="hidden sm:inline">Archived{archivedCount > 0 ? ` (${archivedCount})` : ""}</span>
+                  {archivedCount > 0 && <span className="sm:hidden">{archivedCount}</span>}
                 </Link>
               </Button>
               <NewCustomerDialog />

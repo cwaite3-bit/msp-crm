@@ -3,7 +3,7 @@
 import { db } from "@/server/db";
 import { customers, contacts, notes, users, appSettings } from "@/server/db/schema";
 import { auth } from "@/auth";
-import { eq, and, desc, asc, ilike, or, isNull, isNotNull, gte, lte, sql } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or, isNull, isNotNull, inArray, gte, lte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -126,16 +126,22 @@ export async function updateCustomer(customerId: string, formData: FormData) {
   revalidatePath("/prospects");
 }
 
-// `showArchived` flips the list rather than merging it in — archived
-// customers are meant to be out of the way day-to-day, so a search normally
-// excludes them, and asking for the archived view shows only those (with a
-// way back via unarchiveCustomer) rather than mixing the two together.
+// Scoped to actually-won accounts — ACTIVE now, or FORMER (won, then
+// churned) — since Leads and Prospects have their own screen (see
+// WORKING_STATUSES below). `showArchived` flips the list rather than
+// merging it in — archived customers are meant to be out of the way
+// day-to-day, so a search normally excludes them, and asking for the
+// archived view shows only those (with a way back via unarchiveCustomer)
+// rather than mixing the two together.
+const WON_STATUSES = ["ACTIVE", "FORMER"] as const;
+
 export async function searchCustomers(query: string, showArchived = false) {
   await requireUser();
   const trimmed = query.trim();
   const archivedCondition = showArchived ? isNotNull(customers.archivedAt) : isNull(customers.archivedAt);
   const conditions = trimmed
     ? and(
+        inArray(customers.status, WON_STATUSES),
         archivedCondition,
         or(
           ilike(customers.name, `%${trimmed}%`),
@@ -144,16 +150,22 @@ export async function searchCustomers(query: string, showArchived = false) {
           ilike(customers.industry, `%${trimmed}%`)
         )
       )
-    : archivedCondition;
+    : and(inArray(customers.status, WON_STATUSES), archivedCondition);
 
   return db.select().from(customers).where(conditions).orderBy(desc(customers.createdAt)).limit(100);
 }
 
 // Counts archived customers so the list page can show "Show archived (3)"
-// instead of a bare toggle with no idea what's behind it.
+// instead of a bare toggle with no idea what's behind it. Scoped to the same
+// won statuses searchCustomers shows, so the count matches what "Archived"
+// will actually reveal — an archived Lead/Prospect belongs to (and counts
+// on) the Prospects screen's own Archived view instead.
 export async function countArchivedCustomers(): Promise<number> {
   await requireUser();
-  const rows = await db.select({ id: customers.id }).from(customers).where(isNotNull(customers.archivedAt));
+  const rows = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(and(inArray(customers.status, WON_STATUSES), isNotNull(customers.archivedAt)));
   return rows.length;
 }
 
@@ -183,11 +195,18 @@ export async function unarchiveCustomer(customerId: string) {
 
 // ---- Prospects ----
 // Prospects aren't a separate table — they're just customers with
-// status="PROSPECT" (see customerStatusEnum in schema.ts). That means a
-// prospect already gets contacts, notes/activity, and quotes for free the
-// moment it needs them, and "converting" one is nothing more than changing
-// its status — nothing to copy or migrate. `stage` tracks where in the
-// sales pipeline a prospect sits, independent of that status.
+// status="PROSPECT" or "LEAD" (see customerStatusEnum in schema.ts). That
+// means a prospect already gets contacts, notes/activity, and quotes for
+// free the moment it needs them, and "converting" one is nothing more than
+// changing its status — nothing to copy or migrate. `stage` tracks where in
+// the sales pipeline a prospect sits, independent of that status.
+//
+// LEAD and PROSPECT both mean "hasn't been won yet" and share this same
+// screen — LEAD is just the earlier, less-qualified end of the same
+// pipeline (e.g. raw inbound interest from the public intake form). Only
+// ACTIVE/FORMER — actually won, now or in the past — show on the Customers
+// screen instead (see searchCustomers below).
+const WORKING_STATUSES = ["LEAD", "PROSPECT"] as const;
 
 export type ProspectFilters = {
   state?: string;
@@ -231,7 +250,7 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
   const trimmed = query.trim();
 
   const conditions = [
-    eq(customers.status, "PROSPECT"),
+    inArray(customers.status, WORKING_STATUSES),
     filters.archived ? isNotNull(customers.archivedAt) : isNull(customers.archivedAt),
   ];
   if (trimmed) {
@@ -287,20 +306,20 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
     .limit(200);
 }
 
-// Distinct filter-dropdown option values, scoped to actual PROSPECT rows so
-// the State/Industry filters never offer a choice that would return zero
-// results.
+// Distinct filter-dropdown option values, scoped to actual working (Lead or
+// Prospect) rows so the State/Industry filters never offer a choice that
+// would return zero results.
 export async function listProspectFilterOptions() {
   await requireUser();
   const [states, industries] = await Promise.all([
     db
       .selectDistinct({ value: customers.billingState })
       .from(customers)
-      .where(and(eq(customers.status, "PROSPECT"), isNull(customers.archivedAt), isNotNull(customers.billingState))),
+      .where(and(inArray(customers.status, WORKING_STATUSES), isNull(customers.archivedAt), isNotNull(customers.billingState))),
     db
       .selectDistinct({ value: customers.industry })
       .from(customers)
-      .where(and(eq(customers.status, "PROSPECT"), isNull(customers.archivedAt), isNotNull(customers.industry))),
+      .where(and(inArray(customers.status, WORKING_STATUSES), isNull(customers.archivedAt), isNotNull(customers.industry))),
   ]);
   return {
     states: states.map((s) => s.value).filter((v): v is string => !!v).sort(),
@@ -358,7 +377,7 @@ export async function reassignStateOwner(state: string, fromOwnerId: string, toO
     .set({ accountOwnerId: toOwnerId, updatedAt: new Date() })
     .where(
       and(
-        eq(customers.status, "PROSPECT"),
+        inArray(customers.status, WORKING_STATUSES),
         eq(customers.billingState, state),
         eq(customers.accountOwnerId, fromOwnerId)
       )
@@ -380,7 +399,7 @@ export async function clearStateOwner(state: string): Promise<{ updated: number 
   const result = await db
     .update(customers)
     .set({ accountOwnerId: null, updatedAt: new Date() })
-    .where(and(eq(customers.status, "PROSPECT"), eq(customers.billingState, state)))
+    .where(and(inArray(customers.status, WORKING_STATUSES), eq(customers.billingState, state)))
     .returning({ id: customers.id });
   revalidatePath("/prospects");
   return { updated: result.length };
@@ -399,7 +418,7 @@ export async function applyStateAssignmentsToExisting(): Promise<{ updated: numb
     const result = await db
       .update(customers)
       .set({ accountOwnerId: ownerId, updatedAt: new Date() })
-      .where(and(eq(customers.status, "PROSPECT"), eq(customers.billingState, state), isNull(customers.accountOwnerId)))
+      .where(and(inArray(customers.status, WORKING_STATUSES), eq(customers.billingState, state), isNull(customers.accountOwnerId)))
       .returning({ id: customers.id });
     updated += result.length;
   }

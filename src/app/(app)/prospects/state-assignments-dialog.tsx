@@ -119,8 +119,8 @@ export function StateAssignmentsDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">
-          <MapPin /> Assign by state
+        <Button variant="outline" title="Assign by state">
+          <MapPin /> <span className="hidden sm:inline">Assign by state</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">

@@ -87,8 +87,8 @@ export function ProspectFilterBar({
   const hasFilters = !!(values.q || values.state || values.stage || values.industry || values.size || values.owner);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full max-w-sm">
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="relative w-full sm:max-w-sm">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <Input
           value={values.q}
@@ -99,62 +99,68 @@ export function ProspectFilterBar({
         {pending && <Loader2 className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />}
       </div>
 
-      <Select value={values.state || ALL} onValueChange={(v) => updateSelect("state", v)}>
-        <SelectTrigger className="w-32"><SelectValue placeholder="State" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All states</SelectItem>
-          {states.map((s) => (
-            <SelectItem key={s} value={s}>{s}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {/* Two per row on a phone (still full-width tap targets) rather than
+          one long vertical stack of five dropdowns; sm:contents drops this
+          wrapper from the layout at sm+ so the selects become direct
+          children of the flex-wrap row above, at their normal fixed widths. */}
+      <div className="grid grid-cols-2 gap-2 sm:contents">
+        <Select value={values.state || ALL} onValueChange={(v) => updateSelect("state", v)}>
+          <SelectTrigger className="w-full sm:w-32"><SelectValue placeholder="State" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All states</SelectItem>
+            {states.map((s) => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <Select value={values.stage || ALL} onValueChange={(v) => updateSelect("stage", v)}>
-        <SelectTrigger className="w-40"><SelectValue placeholder="Stage" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All stages</SelectItem>
-          {PROSPECT_STAGES.map((s) => (
-            <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        <Select value={values.stage || ALL} onValueChange={(v) => updateSelect("stage", v)}>
+          <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Stage" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All stages</SelectItem>
+            {PROSPECT_STAGES.map((s) => (
+              <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <Select value={values.industry || ALL} onValueChange={(v) => updateSelect("industry", v)}>
-        <SelectTrigger className="w-44"><SelectValue placeholder="Industry" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All industries</SelectItem>
-          {industries.map((i) => (
-            <SelectItem key={i} value={i}>{i}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        <Select value={values.industry || ALL} onValueChange={(v) => updateSelect("industry", v)}>
+          <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Industry" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All industries</SelectItem>
+            {industries.map((i) => (
+              <SelectItem key={i} value={i}>{i}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <Select value={values.size || ALL} onValueChange={(v) => updateSelect("size", v)}>
-        <SelectTrigger className="w-44"><SelectValue placeholder="Company size" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Any size</SelectItem>
-          {SIZE_BUCKETS.map((b) => (
-            <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        <Select value={values.size || ALL} onValueChange={(v) => updateSelect("size", v)}>
+          <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Company size" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Any size</SelectItem>
+            {SIZE_BUCKETS.map((b) => (
+              <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <Select value={values.owner || ALL} onValueChange={(v) => updateSelect("owner", v)}>
-        <SelectTrigger className="w-40"><SelectValue placeholder="Assigned to" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Everyone</SelectItem>
-          <SelectItem value="unassigned">Unassigned</SelectItem>
-          {staff.map((s) => (
-            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        <Select value={values.owner || ALL} onValueChange={(v) => updateSelect("owner", v)}>
+          <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Assigned to" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Everyone</SelectItem>
+            <SelectItem value="unassigned">Unassigned</SelectItem>
+            {staff.map((s) => (
+              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={clearAll}>
-          <X className="h-3.5 w-3.5" /> Clear filters
-        </Button>
-      )}
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={clearAll} className="col-span-2 sm:col-span-1">
+            <X className="h-3.5 w-3.5" /> Clear filters
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
