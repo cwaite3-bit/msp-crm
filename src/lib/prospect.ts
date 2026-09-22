@@ -39,3 +39,22 @@ export const SIZE_BUCKETS = [
   { value: "unknown", label: "Unknown size", min: null, max: null },
 ] as const;
 export type SizeBucketValue = (typeof SIZE_BUCKETS)[number]["value"];
+
+// Confidence comes from a research import as free text ("High"/"Medium"/
+// "Low", case can vary by spreadsheet) rather than a fixed enum, so this
+// maps it to a badge color by normalizing case rather than an exact match —
+// anything unrecognized (or blank) just renders as a neutral outline badge.
+export function confidenceBadgeVariant(
+  confidence: string | null | undefined
+): "secondary" | "outline" | "warning" | "default" | "success" | "destructive" {
+  switch ((confidence || "").trim().toLowerCase()) {
+    case "high":
+      return "success";
+    case "medium":
+      return "warning";
+    case "low":
+      return "secondary";
+    default:
+      return "outline";
+  }
+}

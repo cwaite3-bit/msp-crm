@@ -1,15 +1,15 @@
 "use server";
 
 import { db } from "@/server/db";
-import { customers, contacts, notes, users } from "@/server/db/schema";
+import { customers, contacts, notes, users, appSettings } from "@/server/db/schema";
 import { auth } from "@/auth";
-import { eq, and, desc, ilike, or, isNull, isNotNull, gte, lte } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or, isNull, isNotNull, gte, lte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import * as XLSX from "xlsx";
 import { PROSPECT_STAGES, SIZE_BUCKETS, type ProspectStage, type SizeBucketValue } from "@/lib/prospect";
-import { formatDate } from "@/lib/utils";
+import { formatDate, normalizeState } from "@/lib/utils";
 
 async function requireUser() {
   const session = await auth();
@@ -34,6 +34,7 @@ const customerSchema = z.object({
   billingCity: z.string().optional(),
   billingState: z.string().optional(),
   billingZip: z.string().optional(),
+  researchConfidence: z.string().optional(),
   contactFirstName: z.string().optional(),
   contactLastName: z.string().optional(),
   contactEmail: z.string().optional(),
@@ -63,8 +64,9 @@ export async function createCustomer(formData: FormData) {
       employeeCount: parsed.employeeCount || null,
       billingStreet: parsed.billingStreet || null,
       billingCity: parsed.billingCity || null,
-      billingState: parsed.billingState || null,
+      billingState: parsed.billingState ? normalizeState(parsed.billingState) : null,
       billingZip: parsed.billingZip || null,
+      researchConfidence: parsed.researchConfidence || null,
     })
     .returning();
 
@@ -111,6 +113,10 @@ export async function updateCustomer(customerId: string, formData: FormData) {
       // pipeline data alone instead of clobbering it to null every save.
       estimatedMonthlyValue: parsed.estimatedMonthlyValue !== undefined ? parsed.estimatedMonthlyValue || null : undefined,
       nextFollowUpAt: parsed.nextFollowUpAt ? new Date(parsed.nextFollowUpAt) : parsed.nextFollowUpAt === "" ? null : undefined,
+      billingState: parsed.billingState !== undefined ? normalizeState(parsed.billingState) || null : undefined,
+      // Tri-state too: researchConfidence isn't on the general edit form, so
+      // an edit that doesn't submit it must leave whatever import set alone.
+      researchConfidence: parsed.researchConfidence !== undefined ? parsed.researchConfidence || null : undefined,
       updatedAt: new Date(),
     })
     .where(eq(customers.id, customerId));
@@ -155,7 +161,20 @@ export type ProspectFilters = {
   industry?: string;
   size?: SizeBucketValue;
   ownerId?: string; // a real users.id, or the sentinel "unassigned"
+  sort?: "confidence" | "createdAt";
+  dir?: "asc" | "desc";
 };
+
+// High/Medium/Low doesn't sort meaningfully as text, so rank it numerically
+// for ORDER BY — unrecognized/blank values sort last regardless of
+// direction, rather than alphabetically wherever "Unknown" would happen to
+// fall.
+const CONFIDENCE_RANK = sql<number>`case lower(${customers.researchConfidence})
+  when 'high' then 3
+  when 'medium' then 2
+  when 'low' then 1
+  else 0
+end`;
 
 // Resolves a SIZE_BUCKETS value into the employeeCount range condition it
 // represents — "unknown" means no employeeCount was ever recorded (the
@@ -195,6 +214,13 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
   if (filters.ownerId === "unassigned") conditions.push(isNull(customers.accountOwnerId));
   else if (filters.ownerId) conditions.push(eq(customers.accountOwnerId, filters.ownerId));
 
+  const orderBy =
+    filters.sort === "confidence"
+      ? filters.dir === "asc"
+        ? asc(CONFIDENCE_RANK)
+        : desc(CONFIDENCE_RANK)
+      : desc(customers.createdAt);
+
   return db
     .select({
       id: customers.id,
@@ -204,14 +230,19 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
       nextFollowUpAt: customers.nextFollowUpAt,
       source: customers.source,
       industry: customers.industry,
+      phone: customers.phone,
+      billingStreet: customers.billingStreet,
+      billingCity: customers.billingCity,
       billingState: customers.billingState,
+      billingZip: customers.billingZip,
+      researchConfidence: customers.researchConfidence,
       accountOwnerId: customers.accountOwnerId,
       ownerName: users.name,
     })
     .from(customers)
     .leftJoin(users, eq(customers.accountOwnerId, users.id))
     .where(and(...conditions))
-    .orderBy(desc(customers.createdAt))
+    .orderBy(orderBy)
     .limit(200);
 }
 
@@ -245,6 +276,52 @@ export async function assignProspectOwner(customerId: string, ownerId: string | 
   await db.update(customers).set({ accountOwnerId: ownerId, updatedAt: new Date() }).where(eq(customers.id, customerId));
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/prospects");
+}
+
+// ---- Territory (state → staff) assignment rules ----
+// A standing rule, e.g. "AZ → John", so every prospect imported into that
+// state is pre-assigned to the right staff member automatically instead of
+// landing Unassigned every time (see importProspects). Stored in the
+// generic app_settings jsonb store — the same pattern settings.ts uses for
+// pricingRateCard/msaSettings/etc. — rather than a dedicated table, since
+// it's just a small { state: ownerId } map with no independent lifecycle
+// of its own. Keys are normalized 2-letter state codes (see normalizeState).
+const STATE_ASSIGNMENTS_KEY = "prospectStateAssignments";
+
+export async function getStateAssignments(): Promise<Record<string, string>> {
+  await requireUser();
+  const [row] = await db.select().from(appSettings).where(eq(appSettings.key, STATE_ASSIGNMENTS_KEY)).limit(1);
+  return (row?.value as Record<string, string>) || {};
+}
+
+export async function updateStateAssignments(assignments: Record<string, string>) {
+  await requireUser();
+  await db
+    .insert(appSettings)
+    .values({ key: STATE_ASSIGNMENTS_KEY, value: assignments })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value: assignments, updatedAt: new Date() } });
+  revalidatePath("/prospects");
+}
+
+// Catches up prospects that were imported *before* a territory rule existed
+// for their state. Only ever fills in an owner where one isn't already set
+// — it never overwrites a prospect someone has already (re)assigned by
+// hand, so running this after tweaking the rules is always safe to repeat.
+export async function applyStateAssignmentsToExisting(): Promise<{ updated: number }> {
+  await requireUser();
+  const assignments = await getStateAssignments();
+  let updated = 0;
+  for (const [state, ownerId] of Object.entries(assignments)) {
+    if (!ownerId) continue;
+    const result = await db
+      .update(customers)
+      .set({ accountOwnerId: ownerId, updatedAt: new Date() })
+      .where(and(eq(customers.status, "PROSPECT"), eq(customers.billingState, state), isNull(customers.accountOwnerId)))
+      .returning({ id: customers.id });
+    updated += result.length;
+  }
+  revalidatePath("/prospects");
+  return { updated };
 }
 
 // Moves a prospect through the pipeline. `lostReason` only sticks when the
@@ -392,6 +469,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
 
   const existing = await db.select({ name: customers.name }).from(customers);
   const existingNames = new Set(existing.map((c) => c.name.trim().toLowerCase()));
+  const stateAssignments = await getStateAssignments();
 
   let imported = 0;
   let skipped = 0;
@@ -481,6 +559,14 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
     if (genericNotes) noteBlocks.push(genericNotes);
     const researchNote = noteBlocks.join("\n\n");
 
+    // Normalized so "AZ" and "Arizona" from two different source
+    // spreadsheets land as the same filterable value (see normalizeState).
+    // If a territory rule has been set for this state (Prospects → Assign
+    // by state), the imported prospect starts pre-assigned to that owner
+    // instead of Unassigned.
+    const billingState = normalizeState(pickField(row, ["state", "billing state"]));
+    const assignedOwnerId = billingState ? stateAssignments[billingState] : undefined;
+
     try {
       const [customer] = await db
         .insert(customers)
@@ -491,6 +577,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
           estimatedMonthlyValue: estimatedValue || null,
           nextFollowUpAt,
           employeeCount: parseEmployeeEstimate(employeeEstimate),
+          accountOwnerId: assignedOwnerId || null,
           industry: pickField(row, ["industry"]) || null,
           website: pickField(row, ["website", "url", "web site"]) || null,
           phone: pickField(row, ["phone", "company phone", "phone number", "main phone"]) || null,
@@ -498,8 +585,9 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
           source: pickField(row, ["source", "lead source"]) || null,
           billingStreet: pickField(row, ["street", "address", "billing street"]) || null,
           billingCity: pickField(row, ["city", "billing city"]) || null,
-          billingState: pickField(row, ["state", "billing state"]) || null,
+          billingState: billingState || null,
           billingZip: pickField(row, ["zip", "zip code", "postal code", "billing zip"]) || null,
+          researchConfidence: researchConfidence || null,
         })
         .returning();
 

@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +15,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, MoreHorizontal, ArrowRight, UserCheck, UserPlus } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import { PROSPECT_STAGES, STAGE_LABELS, STAGE_BADGE_VARIANT, type ProspectStage } from "@/lib/prospect";
+import { ChevronDown, ChevronUp, ArrowUpDown, MoreHorizontal, ArrowRight, UserCheck, UserPlus, Phone, MapPin } from "lucide-react";
+import { formatCurrency, formatDate, formatAddressLine } from "@/lib/utils";
+import { PROSPECT_STAGES, STAGE_LABELS, STAGE_BADGE_VARIANT, confidenceBadgeVariant, type ProspectStage } from "@/lib/prospect";
 import { updateProspectStage, convertProspectStatus, assignProspectOwner } from "@/server/actions/customers";
 
 export type ProspectRow = {
@@ -28,6 +28,12 @@ export type ProspectRow = {
   nextFollowUpAt: Date | string | null;
   source: string | null;
   industry: string | null;
+  phone: string | null;
+  billingStreet: string | null;
+  billingCity: string | null;
+  billingState: string | null;
+  billingZip: string | null;
+  researchConfidence: string | null;
   accountOwnerId: string | null;
   ownerName: string | null;
 };
@@ -36,7 +42,23 @@ export type StaffOption = { id: string; name: string };
 
 export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]; staff: StaffOption[]; hasFilters: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
+
+  const currentSort = searchParams.get("sort");
+  const currentDir = searchParams.get("dir");
+
+  // Toggles: clicking an unsorted column sorts High→Low first (desc);
+  // clicking it again flips to Low→High. Preserves every other filter
+  // already in the URL rather than resetting them.
+  function sortHref(column: "confidence") {
+    const params = new URLSearchParams(searchParams.toString());
+    const nextDir = currentSort === column && currentDir === "desc" ? "asc" : "desc";
+    params.set("sort", column);
+    params.set("dir", nextDir);
+    return `${pathname}?${params.toString()}`;
+  }
 
   function handleStageChange(row: ProspectRow, stage: ProspectStage) {
     let lostReason: string | undefined;
@@ -83,6 +105,16 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
           <TableHead>Est. monthly value</TableHead>
           <TableHead>Next follow-up</TableHead>
           <TableHead>Source</TableHead>
+          <TableHead>
+            <Link href={sortHref("confidence")} className="inline-flex items-center gap-1 hover:underline">
+              Confidence
+              {currentSort === "confidence" ? (
+                currentDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ArrowUpDown className="h-3 w-3 text-slate-400" />
+              )}
+            </Link>
+          </TableHead>
           <TableHead>Assigned to</TableHead>
           <TableHead className="w-10" />
         </TableRow>
@@ -92,6 +124,7 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
           const stage = (row.stage as ProspectStage) || "NEW";
           const followUp = row.nextFollowUpAt ? new Date(row.nextFollowUpAt) : null;
           const overdue = followUp ? followUp < today : false;
+          const addressLine = formatAddressLine(row);
           return (
             <TableRow key={row.id} className={pending ? "opacity-70" : undefined}>
               <TableCell>
@@ -99,6 +132,16 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
                   {row.name}
                 </Link>
                 {row.industry && <div className="text-xs text-slate-500">{row.industry}</div>}
+                {row.phone && (
+                  <div className="flex items-center gap-1 text-xs text-slate-400">
+                    <Phone className="h-3 w-3" /> {row.phone}
+                  </div>
+                )}
+                {addressLine && (
+                  <div className="flex items-center gap-1 text-xs text-slate-400">
+                    <MapPin className="h-3 w-3" /> {addressLine}
+                  </div>
+                )}
               </TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -125,6 +168,13 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
                 {followUp ? formatDate(followUp) : "—"}
               </TableCell>
               <TableCell className="text-slate-500">{row.source || "—"}</TableCell>
+              <TableCell>
+                {row.researchConfidence ? (
+                  <Badge variant={confidenceBadgeVariant(row.researchConfidence)}>{row.researchConfidence}</Badge>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
+              </TableCell>
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -178,7 +228,7 @@ export function ProspectTable({ rows, staff, hasFilters }: { rows: ProspectRow[]
         })}
         {rows.length === 0 && (
           <TableRow>
-            <TableCell colSpan={7} className="py-8 text-center text-slate-500">
+            <TableCell colSpan={8} className="py-8 text-center text-slate-500">
               {hasFilters ? "No prospects match these filters." : "No prospects yet. Add one or import a spreadsheet to get started."}
             </TableCell>
           </TableRow>

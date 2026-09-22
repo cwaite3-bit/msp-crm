@@ -119,6 +119,12 @@ export const customers = pgTable(
     email: text("email"),
     source: text("source"),
     employeeCount: integer("employee_count"),
+    // High/Medium/Low confidence rating from a research-style prospect
+    // import (see importProspects). A plain text column rather than an enum
+    // since a spreadsheet's wording can vary — kept structured (unlike the
+    // rest of that import's narrative fields, which live in a notes entry)
+    // specifically so the Prospects list can display and sort by it.
+    researchConfidence: text("research_confidence"),
 
     billingStreet: text("billing_street"),
     billingCity: text("billing_city"),
