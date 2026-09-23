@@ -1,9 +1,9 @@
 "use server";
 
 import { db } from "@/server/db";
-import { customers, contacts, notes, users, appSettings } from "@/server/db/schema";
+import { customers, contacts, notes, users, appSettings, quotes } from "@/server/db/schema";
 import { auth } from "@/auth";
-import { eq, and, desc, asc, ilike, or, isNull, isNotNull, inArray, gte, lte, sql } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or, isNull, isNotNull, inArray, gte, lte, sql, exists } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -228,6 +228,11 @@ export type ProspectFilters = {
   // "", so isNotNull is enough here without a separate blank-string check.
   hasEmail?: boolean;
   hasPhone?: boolean;
+  // Any quote ever marked Sent for this prospect (quotes.sentAt is set on
+  // "Mark as sent" and stays set through Viewed/Accepted/Rejected — only
+  // resetQuote clears it back to null). Lets staff pull up who they've
+  // already quoted, separate from who's still pre-quote.
+  quoteSent?: boolean;
 };
 
 // High/Medium/Low doesn't sort meaningfully as text, so rank it numerically
@@ -283,6 +288,16 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
   else if (filters.ownerId) conditions.push(eq(customers.accountOwnerId, filters.ownerId));
   if (filters.hasEmail) conditions.push(or(isNotNull(customers.email), isNotNull(customers.publicEmail))!);
   if (filters.hasPhone) conditions.push(isNotNull(customers.phone));
+  if (filters.quoteSent) {
+    conditions.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(quotes)
+          .where(and(eq(quotes.customerId, customers.id), isNotNull(quotes.sentAt)))
+      )
+    );
+  }
 
   const orderBy =
     filters.sort === "confidence"

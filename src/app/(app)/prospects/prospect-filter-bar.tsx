@@ -21,6 +21,7 @@ export type ProspectFilterValues = {
   owner: string;
   hasEmail: boolean;
   hasPhone: boolean;
+  quoteSent: boolean;
 };
 
 export function ProspectFilterBar({
@@ -52,7 +53,8 @@ export function ProspectFilterBar({
     initial.size !== prevInitial.size ||
     initial.owner !== prevInitial.owner ||
     initial.hasEmail !== prevInitial.hasEmail ||
-    initial.hasPhone !== prevInitial.hasPhone
+    initial.hasPhone !== prevInitial.hasPhone ||
+    initial.quoteSent !== prevInitial.quoteSent
   ) {
     setPrevInitial(initial);
     setValues(initial);
@@ -68,6 +70,7 @@ export function ProspectFilterBar({
     if (next.owner) params.set("owner", next.owner);
     if (next.hasEmail) params.set("hasEmail", "1");
     if (next.hasPhone) params.set("hasPhone", "1");
+    if (next.quoteSent) params.set("quoteSent", "1");
     startTransition(() => {
       router.replace(params.toString() ? `${pathname}?${params}` : pathname);
     });
@@ -86,7 +89,7 @@ export function ProspectFilterBar({
     debounceRef.current = setTimeout(() => pushParams(nextValues), 250);
   }
 
-  function toggleFlag(key: "hasEmail" | "hasPhone", checked: boolean) {
+  function toggleFlag(key: "hasEmail" | "hasPhone" | "quoteSent", checked: boolean) {
     const next = { ...values, [key]: checked };
     setValues(next);
     pushParams(next);
@@ -102,6 +105,7 @@ export function ProspectFilterBar({
       owner: "",
       hasEmail: false,
       hasPhone: false,
+      quoteSent: false,
     };
     setValues(cleared);
     pushParams(cleared);
@@ -115,7 +119,8 @@ export function ProspectFilterBar({
     values.size ||
     values.owner ||
     values.hasEmail ||
-    values.hasPhone
+    values.hasPhone ||
+    values.quoteSent
   );
 
   return (
@@ -206,6 +211,16 @@ export function ProspectFilterBar({
             />
             <Label htmlFor="hasPhone" className="cursor-pointer text-sm font-normal text-slate-600">
               Has phone
+            </Label>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              id="quoteSent"
+              checked={values.quoteSent}
+              onCheckedChange={(checked) => toggleFlag("quoteSent", checked === true)}
+            />
+            <Label htmlFor="quoteSent" className="cursor-pointer text-sm font-normal text-slate-600">
+              Quote sent
             </Label>
           </div>
         </div>

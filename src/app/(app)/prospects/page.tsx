@@ -25,16 +25,18 @@ export default async function ProspectsPage({
     owner?: string;
     hasEmail?: string;
     hasPhone?: string;
+    quoteSent?: string;
     sort?: string;
     dir?: string;
     archived?: string;
   }>;
 }) {
-  const { q, state, stage, industry, size, owner, hasEmail, hasPhone, sort, dir, archived } = await searchParams;
+  const { q, state, stage, industry, size, owner, hasEmail, hasPhone, quoteSent, sort, dir, archived } = await searchParams;
   const query = q ?? "";
   const showArchived = archived === "1";
   const filterHasEmail = hasEmail === "1";
   const filterHasPhone = hasPhone === "1";
+  const filterQuoteSent = quoteSent === "1";
 
   const [rows, filterOptions, allUsers, stateAssignments] = await Promise.all([
     searchProspects(query, {
@@ -45,6 +47,7 @@ export default async function ProspectsPage({
       ownerId: owner || undefined,
       hasEmail: filterHasEmail,
       hasPhone: filterHasPhone,
+      quoteSent: filterQuoteSent,
       sort: sort === "confidence" ? "confidence" : undefined,
       dir: dir === "asc" ? "asc" : "desc",
       archived: showArchived,
@@ -55,7 +58,7 @@ export default async function ProspectsPage({
   ]);
 
   const staff = allUsers.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }));
-  const hasFilters = !!(query || state || stage || industry || size || owner || filterHasEmail || filterHasPhone);
+  const hasFilters = !!(query || state || stage || industry || size || owner || filterHasEmail || filterHasPhone || filterQuoteSent);
 
   return (
     <div className="flex flex-col gap-6">
@@ -104,6 +107,7 @@ export default async function ProspectsPage({
               owner: owner || "",
               hasEmail: filterHasEmail,
               hasPhone: filterHasPhone,
+              quoteSent: filterQuoteSent,
             }}
             states={filterOptions.states}
             industries={filterOptions.industries}
