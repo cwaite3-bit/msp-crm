@@ -279,7 +279,7 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
   }
   if (filters.ownerId === "unassigned") conditions.push(isNull(customers.accountOwnerId));
   else if (filters.ownerId) conditions.push(eq(customers.accountOwnerId, filters.ownerId));
-  if (filters.hasEmail) conditions.push(isNotNull(customers.email));
+  if (filters.hasEmail) conditions.push(or(isNotNull(customers.email), isNotNull(customers.publicEmail))!);
   if (filters.hasPhone) conditions.push(isNotNull(customers.phone));
 
   const orderBy =
@@ -657,6 +657,7 @@ type ParsedProspectRow = {
   website: string;
   phone: string;
   email: string;
+  publicEmail: string;
   source: string;
   billingStreet: string;
   billingCity: string;
@@ -754,7 +755,8 @@ function parseProspectRow(row: Record<string, unknown>, batchResearchedAt: Date 
     industry: pickField(row, ["industry"]),
     website: pickField(row, ["website", "url", "web site"]),
     phone: pickField(row, ["phone", "company phone", "phone number", "main phone"]),
-    email: pickField(row, ["email", "company email", "public business email"]),
+    email: pickField(row, ["email", "company email"]),
+    publicEmail: pickField(row, ["public email", "public business email"]),
     source: pickField(row, ["source", "lead source"]),
     billingStreet: pickField(row, ["street", "address", "billing street"]),
     billingCity: pickField(row, ["city", "billing city"]),
@@ -782,8 +784,8 @@ function parseProspectRow(row: Record<string, unknown>, batchResearchedAt: Date 
 // shouldn't double up records. Passing `updateExisting: true` (a checkbox in
 // the Import dialog) changes that for matched rows only: instead of
 // skipping, it fills in whichever of that prospect's fields are currently
-// blank from the row's data — company phone/email/website/address/source/
-// confidence/estimated value/employee count, plus the primary contact's
+// blank from the row's data — company phone/email/public email/website/
+// address/source/confidence/estimated value/employee count, plus the primary contact's
 // email/phone/title, or adding a first contact if none exists yet. It never
 // overwrites a field that already has a value, so re-running an enrichment
 // pass (or the same file twice) can't clobber anything staff have since
@@ -836,6 +838,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
       name: customers.name,
       phone: customers.phone,
       email: customers.email,
+      publicEmail: customers.publicEmail,
       website: customers.website,
       industry: customers.industry,
       source: customers.source,
@@ -880,6 +883,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
         const filled: string[] = [];
         if (parsed.phone && !match.phone) { patch.phone = parsed.phone; filled.push("phone"); }
         if (parsed.email && !match.email) { patch.email = parsed.email; filled.push("email"); }
+        if (parsed.publicEmail && !match.publicEmail) { patch.publicEmail = parsed.publicEmail; filled.push("public email"); }
         if (parsed.website && !match.website) { patch.website = parsed.website; filled.push("website"); }
         if (parsed.industry && !match.industry) { patch.industry = parsed.industry; filled.push("industry"); }
         if (parsed.source && !match.source) { patch.source = parsed.source; filled.push("source"); }
@@ -981,6 +985,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
           website: parsed.website || null,
           phone: parsed.phone || null,
           email: parsed.email || null,
+          publicEmail: parsed.publicEmail || null,
           source: parsed.source || null,
           billingStreet: parsed.billingStreet || null,
           billingCity: parsed.billingCity || null,
@@ -1011,6 +1016,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
         name: parsed.name,
         phone: parsed.phone || null,
         email: parsed.email || null,
+        publicEmail: parsed.publicEmail || null,
         website: parsed.website || null,
         industry: parsed.industry || null,
         source: parsed.source || null,

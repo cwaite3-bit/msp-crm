@@ -117,6 +117,14 @@ export const customers = pgTable(
     website: text("website"),
     phone: text("phone"),
     email: text("email"),
+    // A separate publicly-listed email (e.g. a "Public Business Email"
+    // column from a research-style import) — kept apart from `email` rather
+    // than merged in, since a cold-outreach spreadsheet often has both a
+    // company/contact email AND a scraped public one, and collapsing them
+    // would silently drop whichever one lands second. "Has email" (the
+    // Prospects filter) counts a prospect as having an email if either is
+    // set.
+    publicEmail: text("public_email"),
     source: text("source"),
     employeeCount: integer("employee_count"),
     // High/Medium/Low confidence rating from a research-style prospect
