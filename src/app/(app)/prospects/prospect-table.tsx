@@ -29,6 +29,7 @@ import {
   Map as MapIcon,
   Archive,
   ArchiveRestore,
+  Send,
 } from "lucide-react";
 import { formatCurrency, formatDate, formatAddressLine, googleMapsSearchUrl, googleMapsDirectionsUrl } from "@/lib/utils";
 import { PROSPECT_STAGES, STAGE_LABELS, STAGE_BADGE_VARIANT, confidenceBadgeVariant, type ProspectStage } from "@/lib/prospect";
@@ -63,6 +64,7 @@ export type ProspectRow = {
   accountOwnerId: string | null;
   ownerName: string | null;
   archivedAt: Date | string | null;
+  quoteSent: boolean;
 };
 
 export type StaffOption = { id: string; name: string };
@@ -208,9 +210,16 @@ function NameBlock({ row }: { row: ProspectRow }) {
   const query = mapQuery(row);
   return (
     <div>
-      <Link href={`/customers/${row.id}`} className="font-medium text-slate-900 hover:underline">
-        {row.name}
-      </Link>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Link href={`/customers/${row.id}`} className="font-medium text-slate-900 hover:underline">
+          {row.name}
+        </Link>
+        {row.quoteSent && (
+          <Badge variant="success" className="gap-1 px-1.5 py-0 text-[10px] font-normal" title="A quote has been sent to this prospect">
+            <Send className="h-2.5 w-2.5" /> Quote sent
+          </Badge>
+        )}
+      </div>
       {row.industry && <div className="text-xs text-slate-500">{row.industry}</div>}
       {row.phone && (
         <div className="flex items-center gap-1 text-xs text-slate-400">

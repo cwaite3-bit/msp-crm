@@ -324,6 +324,11 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
       accountOwnerId: customers.accountOwnerId,
       ownerName: users.name,
       archivedAt: customers.archivedAt,
+      // Same "any quote ever marked Sent" definition as the quoteSent filter
+      // above — drives the "Quote sent" badge on the Prospects list so staff
+      // can tell at a glance who's already been quoted, without needing the
+      // filter checkbox on.
+      quoteSent: sql<boolean>`exists (select 1 from ${quotes} where ${quotes.customerId} = ${customers.id} and ${quotes.sentAt} is not null)`,
     })
     .from(customers)
     .leftJoin(users, eq(customers.accountOwnerId, users.id))
