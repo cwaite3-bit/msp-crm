@@ -85,6 +85,10 @@ export function NewProspectDialog() {
               <Label htmlFor="email">Company email</Label>
               <Input id="email" name="email" type="email" />
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="publicEmail">Public email</Label>
+              <Input id="publicEmail" name="publicEmail" type="email" />
+            </div>
             <div className="col-span-2 flex flex-col gap-1.5">
               <Label htmlFor="website">Website</Label>
               <Input id="website" name="website" placeholder="https://" />

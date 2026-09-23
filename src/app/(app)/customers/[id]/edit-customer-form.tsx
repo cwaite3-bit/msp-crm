@@ -75,6 +75,10 @@ export function EditCustomerForm({ customer }: { customer: Customer }) {
         <Label htmlFor="email">Company email</Label>
         <Input id="email" name="email" type="email" defaultValue={customer.email ?? ""} />
       </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="publicEmail">Public email</Label>
+        <Input id="publicEmail" name="publicEmail" type="email" defaultValue={customer.publicEmail ?? ""} />
+      </div>
       <div className="col-span-2 flex flex-col gap-1.5">
         <Label htmlFor="website">Website</Label>
         <Input id="website" name="website" defaultValue={customer.website ?? ""} />

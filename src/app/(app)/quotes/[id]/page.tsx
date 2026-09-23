@@ -1,6 +1,6 @@
 import { db } from "@/server/db";
-import { quotes, quoteLineItems, quoteEvents, customers, contacts, serviceTiers, quoteAddendumLineItems } from "@/server/db/schema";
-import { eq, asc, and, inArray } from "drizzle-orm";
+import { quotes, quoteLineItems, customers, contacts, serviceTiers, quoteAddendumLineItems } from "@/server/db/schema";
+import { eq, asc, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { listCatalog } from "@/server/actions/catalog";
@@ -12,7 +12,7 @@ import { listAddendumsForQuote } from "@/server/actions/addendums";
 import { isAiReviewStale } from "@/server/actions/ai-review";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { QuoteBuilder } from "./quote-builder";
@@ -51,13 +51,6 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
     .where(eq(quoteLineItems.quoteId, id))
     .orderBy(asc(quoteLineItems.sortOrder));
   const catalog = await listCatalog();
-  // Every open of the public link logs a "VIEWED" quoteEvents row (see
-  // recordQuoteView), so counting them gives a repeat-view count for free
-  // without a separate counter column — firstViewedAt/lastViewedAt on the
-  // quote itself (already set by that same function) cover the "when".
-  const viewEvents = quote.firstViewedAt
-    ? await db.select({ id: quoteEvents.id }).from(quoteEvents).where(and(eq(quoteEvents.quoteId, id), eq(quoteEvents.type, "VIEWED")))
-    : [];
 
   const rateCard = await getRateCard();
   const checklistTemplate = await getChecklistTemplate();
@@ -121,23 +114,12 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
               <StatusBadge status={quote.status} />
             </div>
             <p className="text-sm text-slate-500">Created {formatDate(quote.createdAt)}</p>
-            {quote.firstViewedAt && (
-              <p className="text-sm text-slate-500">
-                {viewEvents.length <= 1 ? (
-                  <>Viewed {formatDateTime(quote.firstViewedAt)}</>
-                ) : (
-                  <>
-                    Viewed {viewEvents.length} times — first {formatDateTime(quote.firstViewedAt)}
-                    {quote.lastViewedAt && <>, last {formatDateTime(quote.lastViewedAt)}</>}
-                  </>
-                )}
-              </p>
-            )}
           </div>
           <QuoteActions
             quote={quote}
             msaSigned={msaDocument?.status === "SIGNED"}
             contact={customerContacts.find((c) => c.id === quote.contactId) ?? null}
+            customerPublicEmail={customer?.publicEmail ?? null}
           />
         </div>
       </div>

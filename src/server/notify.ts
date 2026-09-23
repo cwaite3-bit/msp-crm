@@ -120,17 +120,22 @@ export async function notifyCustomerQuoteSent(quoteId: string, message?: string)
     };
   }
   const [contact] = await db.select().from(contacts).where(eq(contacts.id, quote.contactId)).limit(1);
-  if (!contact?.email) {
+  const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
+
+  // Prefer the contact's own email; if they don't have one on file, fall
+  // back to the company's public email (e.g. filled in from a research-
+  // style prospect import) rather than blocking the send outright.
+  const recipientEmail = contact?.email || customer?.publicEmail || null;
+  if (!recipientEmail) {
     return {
       sent: false,
-      error: "The selected contact has no email on file — add one, or share the client link manually.",
+      error: "The selected contact has no email on file, and there's no public email saved for this company either — add one, or share the client link manually.",
     };
   }
   if (!isEmailConfigured()) {
     return { sent: false, error: "Email isn't configured yet (RESEND_API_KEY) — share the client link manually for now." };
   }
 
-  const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
   const url = `${await appUrl()}/q/${quote.publicToken}`;
 
   // The optional note staff typed into the "Mark as sent" dialog — never
@@ -146,9 +151,9 @@ export async function notifyCustomerQuoteSent(quoteId: string, message?: string)
 
   try {
     await sendEmail({
-      to: contact.email,
+      to: recipientEmail,
       subject: `Your quote from Lockdown IT — #${quote.quoteNumber}${quote.title ? `: ${quote.title}` : ""}`,
-      html: `<p>Hi${contact.firstName ? ` ${contact.firstName}` : ""},</p>
+      html: `<p>Hi${contact?.firstName ? ` ${contact.firstName}` : ""},</p>
 <p>Your IT services quote${quote.title ? ` — "${quote.title}"` : ""} is ready to review${customer ? ` for ${customer.name}` : ""}.</p>
 ${messageHtml}
 <p><a href="${url}">View and respond to your quote</a></p>

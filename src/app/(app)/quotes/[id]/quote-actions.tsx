@@ -24,10 +24,15 @@ export function QuoteActions({
   quote,
   msaSigned,
   contact,
+  customerPublicEmail,
 }: {
   quote: Quote;
   msaSigned: boolean;
   contact: Contact | null;
+  // Fallback recipient when the selected contact has no email of their own —
+  // mirrors the send logic in src/server/notify.ts (contact email first,
+  // then the company's public email).
+  customerPublicEmail: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -35,8 +40,14 @@ export function QuoteActions({
   const [sendNote, setSendNote] = useState("");
 
   const publicUrl = typeof window !== "undefined" ? `${window.location.origin}/q/${quote.publicToken}` : `/q/${quote.publicToken}`;
+  const effectiveEmail = contact?.email || customerPublicEmail || null;
+  const usingPublicEmail = !!effectiveEmail && !contact?.email;
   const recipientLabel = contact
-    ? `${contact.firstName} ${contact.lastName}${contact.email ? ` <${contact.email}>` : " (no email on file)"}`
+    ? `${contact.firstName} ${contact.lastName}${
+        effectiveEmail
+          ? ` <${effectiveEmail}>${usingPublicEmail ? " — public email, no contact email on file" : ""}`
+          : " (no email on file)"
+      }`
     : "no contact selected on this quote";
 
   function copyLink() {
