@@ -219,6 +219,13 @@ export type ProspectFilters = {
   // Same show-only-that-view convention as searchCustomers — the Prospects
   // list excludes archived rows unless this is explicitly requested.
   archived?: boolean;
+  // "Only ones I can actually reach out to" filters — handy right after an
+  // enrichment import (see importProspects' updateExisting) to pull up just
+  // the records that now have a phone/email, or conversely still don't.
+  // Every write path in this file stores an empty field as null rather than
+  // "", so isNotNull is enough here without a separate blank-string check.
+  hasEmail?: boolean;
+  hasPhone?: boolean;
 };
 
 // High/Medium/Low doesn't sort meaningfully as text, so rank it numerically
@@ -272,6 +279,8 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
   }
   if (filters.ownerId === "unassigned") conditions.push(isNull(customers.accountOwnerId));
   else if (filters.ownerId) conditions.push(eq(customers.accountOwnerId, filters.ownerId));
+  if (filters.hasEmail) conditions.push(isNotNull(customers.email));
+  if (filters.hasPhone) conditions.push(isNotNull(customers.phone));
 
   const orderBy =
     filters.sort === "confidence"

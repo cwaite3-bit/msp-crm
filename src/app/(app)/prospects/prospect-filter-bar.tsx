@@ -4,6 +4,8 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Search, Loader2, X } from "lucide-react";
 import { PROSPECT_STAGES, STAGE_LABELS, SIZE_BUCKETS } from "@/lib/prospect";
@@ -17,6 +19,8 @@ export type ProspectFilterValues = {
   industry: string;
   size: string;
   owner: string;
+  hasEmail: boolean;
+  hasPhone: boolean;
 };
 
 export function ProspectFilterBar({
@@ -46,7 +50,9 @@ export function ProspectFilterBar({
     initial.stage !== prevInitial.stage ||
     initial.industry !== prevInitial.industry ||
     initial.size !== prevInitial.size ||
-    initial.owner !== prevInitial.owner
+    initial.owner !== prevInitial.owner ||
+    initial.hasEmail !== prevInitial.hasEmail ||
+    initial.hasPhone !== prevInitial.hasPhone
   ) {
     setPrevInitial(initial);
     setValues(initial);
@@ -60,6 +66,8 @@ export function ProspectFilterBar({
     if (next.industry) params.set("industry", next.industry);
     if (next.size) params.set("size", next.size);
     if (next.owner) params.set("owner", next.owner);
+    if (next.hasEmail) params.set("hasEmail", "1");
+    if (next.hasPhone) params.set("hasPhone", "1");
     startTransition(() => {
       router.replace(params.toString() ? `${pathname}?${params}` : pathname);
     });
@@ -78,13 +86,37 @@ export function ProspectFilterBar({
     debounceRef.current = setTimeout(() => pushParams(nextValues), 250);
   }
 
+  function toggleFlag(key: "hasEmail" | "hasPhone", checked: boolean) {
+    const next = { ...values, [key]: checked };
+    setValues(next);
+    pushParams(next);
+  }
+
   function clearAll() {
-    const cleared: ProspectFilterValues = { q: "", state: "", stage: "", industry: "", size: "", owner: "" };
+    const cleared: ProspectFilterValues = {
+      q: "",
+      state: "",
+      stage: "",
+      industry: "",
+      size: "",
+      owner: "",
+      hasEmail: false,
+      hasPhone: false,
+    };
     setValues(cleared);
     pushParams(cleared);
   }
 
-  const hasFilters = !!(values.q || values.state || values.stage || values.industry || values.size || values.owner);
+  const hasFilters = !!(
+    values.q ||
+    values.state ||
+    values.stage ||
+    values.industry ||
+    values.size ||
+    values.owner ||
+    values.hasEmail ||
+    values.hasPhone
+  );
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -154,6 +186,29 @@ export function ProspectFilterBar({
             ))}
           </SelectContent>
         </Select>
+
+        <div className="col-span-2 flex flex-wrap items-center gap-x-4 gap-y-2 sm:col-span-1 sm:contents">
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              id="hasEmail"
+              checked={values.hasEmail}
+              onCheckedChange={(checked) => toggleFlag("hasEmail", checked === true)}
+            />
+            <Label htmlFor="hasEmail" className="cursor-pointer text-sm font-normal text-slate-600">
+              Has email
+            </Label>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              id="hasPhone"
+              checked={values.hasPhone}
+              onCheckedChange={(checked) => toggleFlag("hasPhone", checked === true)}
+            />
+            <Label htmlFor="hasPhone" className="cursor-pointer text-sm font-normal text-slate-600">
+              Has phone
+            </Label>
+          </div>
+        </div>
 
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={clearAll} className="col-span-2 sm:col-span-1">

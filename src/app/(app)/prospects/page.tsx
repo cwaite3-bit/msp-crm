@@ -23,14 +23,18 @@ export default async function ProspectsPage({
     industry?: string;
     size?: string;
     owner?: string;
+    hasEmail?: string;
+    hasPhone?: string;
     sort?: string;
     dir?: string;
     archived?: string;
   }>;
 }) {
-  const { q, state, stage, industry, size, owner, sort, dir, archived } = await searchParams;
+  const { q, state, stage, industry, size, owner, hasEmail, hasPhone, sort, dir, archived } = await searchParams;
   const query = q ?? "";
   const showArchived = archived === "1";
+  const filterHasEmail = hasEmail === "1";
+  const filterHasPhone = hasPhone === "1";
 
   const [rows, filterOptions, allUsers, stateAssignments] = await Promise.all([
     searchProspects(query, {
@@ -39,6 +43,8 @@ export default async function ProspectsPage({
       industry: industry || undefined,
       size: (size as SizeBucketValue) || undefined,
       ownerId: owner || undefined,
+      hasEmail: filterHasEmail,
+      hasPhone: filterHasPhone,
       sort: sort === "confidence" ? "confidence" : undefined,
       dir: dir === "asc" ? "asc" : "desc",
       archived: showArchived,
@@ -49,7 +55,7 @@ export default async function ProspectsPage({
   ]);
 
   const staff = allUsers.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }));
-  const hasFilters = !!(query || state || stage || industry || size || owner);
+  const hasFilters = !!(query || state || stage || industry || size || owner || filterHasEmail || filterHasPhone);
 
   return (
     <div className="flex flex-col gap-6">
@@ -96,6 +102,8 @@ export default async function ProspectsPage({
               industry: industry || "",
               size: size || "",
               owner: owner || "",
+              hasEmail: filterHasEmail,
+              hasPhone: filterHasPhone,
             }}
             states={filterOptions.states}
             industries={filterOptions.industries}
