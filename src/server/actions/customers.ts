@@ -694,79 +694,144 @@ type ParsedProspectRow = {
   contactTitle: string;
 };
 
-function parseProspectRow(row: Record<string, unknown>, batchResearchedAt: Date | null): ParsedProspectRow {
-  const name = pickField(row, ["company", "company name", "name", "business", "business name", "organization", "account name"]);
-  const stageRaw = pickField(row, ["stage", "status", "pipeline stage", "sales stage"]);
-  const contactFirstNameRaw = pickField(row, ["contact first name", "first name", "contact firstname"]);
-  const contactLastNameRaw = pickField(row, ["contact last name", "last name", "contact lastname"]);
-  const contactFullName = pickField(row, ["contact name", "contact", "contact person", "decision maker"]);
-  const [splitFirst, ...splitRest] = contactFullName ? contactFullName.split(/\s+/) : [];
+// First line of every research note the importer writes — also how the
+// "update existing" path recognizes a note it wrote itself (see
+// importProspects), so it can refresh that note on a re-import without ever
+// touching notes staff typed.
+const RESEARCH_NOTE_TITLE = "Prospect research (imported)";
 
-  const estimatedRaw = pickField(row, ["estimated value", "est. value", "est value", "deal size", "value", "estimated mrr", "mrr"]);
+// Turns a cell like "Privately owned hospital; CT, ultrasound, lab; 7-day
+// operation" into one bullet per point, so a research note reads as a list
+// instead of a run-on line. A value with only one point stays plain text.
+function asPoints(value: string): string {
+  const points = value
+    .split(/\s*;\s*|\r?\n/)
+    .map((p) => p.trim().replace(/^[-•*]\s*/, ""))
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1));
+  return points.length > 1 ? points.map((p) => `• ${p}`).join("\n") : value.trim();
+}
+
+function parseProspectRow(row: Record<string, unknown>, batchResearchedAt: Date | null): ParsedProspectRow {
+  // Every alias looked up below is recorded, so any column the importer has
+  // no specific use for still lands in the note's "Other details" section
+  // instead of being silently dropped.
+  const knownHeaders = new Set<string>();
+  const pick = (aliases: string[]) => {
+    for (const a of aliases) knownHeaders.add(a);
+    return pickField(row, aliases);
+  };
+
+  const name = pick(["company", "company name", "name", "business", "business name", "organization", "account name"]);
+  const stageRaw = pick(["stage", "status", "pipeline stage", "sales stage"]);
+  const contactFirstNameRaw = pick(["contact first name", "first name", "contact firstname"]);
+  const contactLastNameRaw = pick(["contact last name", "last name", "contact lastname"]);
+  const contactFullName = pick(["contact name", "contact", "contact person", "decision maker"]);
+  const [splitFirst, ...splitRest] = contactFullName ? contactFullName.split(/\s+/) : [];
+  const contactTitle = pick(["contact title", "title", "job title"]);
+
+  const estimatedRaw = pick(["estimated value", "est. value", "est value", "deal size", "value", "estimated mrr", "mrr"]);
   const estimatedValue = estimatedRaw.replace(/[^0-9.]/g, "");
-  const followUpRaw = pickField(row, ["next follow up", "next follow-up", "follow up date", "follow-up date", "next follow up date"]);
+  const followUpRaw = pick(["next follow up", "next follow-up", "follow up date", "follow-up date", "next follow up date"]);
   let nextFollowUpAt: Date | null = null;
   if (followUpRaw) {
     const parsedDate = new Date(followUpRaw);
     if (!Number.isNaN(parsedDate.getTime())) nextFollowUpAt = parsedDate;
   }
 
-  // Pre-qualification research fields — populated by research-style
-  // exports (a prospecting sweep) rather than a plain contact list.
-  // There's no dedicated column for any of this (see the note above the
-  // Prospects section on why the data model is deliberately just
-  // `customers` + `contacts` + `notes`), so it's logged as one neatly
-  // organized activity note on the imported customer instead — a short
-  // "at a glance" block of facts, then each longer narrative field under
-  // its own heading, blank-line separated rather than run together.
-  // NotesPanel renders a note's body with `whitespace-pre-wrap`, so this
-  // formatting (line breaks, blank lines) displays exactly as built here.
-  const externalId = pickField(row, ["prospect id", "external id", "id"]);
-  const researchConfidence = pickField(row, ["confidence", "research confidence"]);
-  const researchSourceUrl = pickField(row, ["primary source", "source url", "research source", "source"]);
-  const existingItProvider = pickField(row, ["existing it provider", "current it provider", "incumbent provider", "incumbent it"]);
-  const rowResearchedRaw = pickField(row, ["last researched", "research date", "date researched"]);
+  // Columns that map to real fields on the customer/contact.
+  const industry = pick(["industry"]);
+  const website = pick(["website", "url", "web site"]);
+  const phone = pick(["phone", "company phone", "phone number", "main phone"]);
+  const email = pick(["email", "company email"]);
+  const publicEmail = pick(["public email", "public business email"]);
+  const leadSource = pick(["source", "lead source"]);
+  const billingStreet = pick(["street", "address", "billing street"]);
+  const billingCity = pick(["city", "billing city"]);
+  // Normalized so "AZ" and "Arizona" from two different source
+  // spreadsheets land as the same filterable value (see normalizeState).
+  const billingState = normalizeState(pick(["state", "billing state"]));
+  const billingZip = pick(["zip", "zip code", "postal code", "billing zip"]);
+  const contactEmail = pick(["contact email"]);
+  const contactPhone = pick(["contact phone", "contact phone number"]);
+
+  // Pre-qualification research columns — populated by research-style
+  // exports (a prospecting sweep) rather than a plain contact list. There's
+  // no dedicated column for any of this (the data model is deliberately
+  // just `customers` + `contacts` + `notes`), so it's written as one
+  // research note, laid out in titled sections. NotesPanel renders a note
+  // with `whitespace-pre-wrap`, so the line breaks display exactly as built.
+  const externalId = pick(["prospect id", "external id", "id"]);
+  const researchConfidence = pick(["confidence", "research confidence"]);
+  const researchSourceUrl = pick(["primary source", "source url", "research source"]);
+  const existingItProvider = pick(["existing it provider", "current it provider", "incumbent provider", "incumbent it"]);
+  const rowResearchedRaw = pick(["last researched", "research date", "date researched"]);
   let researchedAt = batchResearchedAt;
   if (rowResearchedRaw) {
     const parsedDate = new Date(rowResearchedRaw);
     if (!Number.isNaN(parsedDate.getTime())) researchedAt = parsedDate;
   }
-
   // Employee Estimate in a research export is typically a range ("11-50"),
-  // not a single verified count — the field guide explicitly warns not to
-  // treat it as exact, so it's folded into the research note below rather
-  // than forced into the numeric employeeCount column.
-  const employeeEstimate = pickField(row, ["employee estimate", "employee range", "headcount estimate"]);
-  const employeeEvidence = pickField(row, ["employee evidence"]);
-  const genericNotes = pickField(row, ["notes", "note", "description", "comments"]);
+  // not a verified count — kept in the note as-is; only its low end feeds
+  // the numeric employeeCount used by the size filter.
+  const employeeEstimate = pick(["employee estimate", "employee range", "headcount estimate"]);
+  const employeeEvidence = pick(["employee evidence"]);
+  const businessSignals = pick(["business / it signals", "business/it signals", "business it signals"]);
+  const securitySignals = pick(["security / complexity signals", "security/complexity signals"]);
+  const decisionMakerNotes = pick(["decision-maker notes", "decision maker notes"]);
+  const qualificationNotes = pick(["qualification notes"]);
+  const growthIntent = pick(["it / growth intent signal", "it/growth intent signal"]);
+  const contactInfoSource = pick(["email/phone source", "email / phone source", "contact info source"]);
+  const emailStatus = pick(["email status"]);
+  const outreachStatus = pick(["outreach status"]);
+  const genericNotes = pick(["notes", "note", "description", "comments"]);
 
-  const factLines: string[] = [];
-  if (externalId) factLines.push(`Prospect ID: ${externalId}`);
-  if (researchConfidence) factLines.push(`Confidence: ${researchConfidence}`);
-  if (existingItProvider) factLines.push(`Existing IT provider: ${existingItProvider}`);
-  if (researchSourceUrl) factLines.push(`Source: ${researchSourceUrl}`);
-  if (researchedAt) factLines.push(`Researched: ${formatDate(researchedAt)}`);
-  if (employeeEstimate) factLines.push(`Employee estimate: ${employeeEstimate}${employeeEvidence ? ` (${employeeEvidence})` : ""}`);
+  const sections: [string, string[]][] = [];
+  const add = (heading: string, lines: (string | false | null | undefined)[]) => {
+    const kept = lines.filter((l): l is string => !!l && !!l.trim());
+    if (kept.length) sections.push([heading, kept]);
+  };
 
-  const narrativeSections: [string, string][] = [
-    ["Business / IT signals", pickField(row, ["business / it signals", "business/it signals", "business it signals"])],
-    ["Security / complexity signals", pickField(row, ["security / complexity signals", "security/complexity signals"])],
-    ["Decision-maker notes", pickField(row, ["decision-maker notes", "decision maker notes"])],
-    ["Qualification notes", pickField(row, ["qualification notes"])],
-    ["IT / growth intent signal", pickField(row, ["it / growth intent signal", "it/growth intent signal"])],
-  ];
+  // "Confidence: …" must stay at the start of its own line —
+  // backfillConfidenceFromNotes reads it back out with /^Confidence:/m.
+  add("AT A GLANCE", [
+    externalId && `Prospect ID: ${externalId}`,
+    researchConfidence && `Confidence: ${researchConfidence}`,
+    employeeEstimate && `Employee estimate: ${employeeEstimate}${employeeEvidence ? ` (${employeeEvidence})` : ""}`,
+    !employeeEstimate && employeeEvidence && `Employee evidence: ${employeeEvidence}`,
+    existingItProvider && `Existing IT provider: ${existingItProvider}`,
+    researchedAt && `Researched: ${formatDate(researchedAt)}`,
+  ]);
+  add("BUSINESS / IT SIGNALS", [businessSignals && asPoints(businessSignals)]);
+  add("SECURITY / COMPLEXITY SIGNALS", [securitySignals && asPoints(securitySignals)]);
+  add("DECISION-MAKER", [
+    (contactFullName || contactTitle) && [contactFullName, contactTitle].filter(Boolean).join(" — "),
+    decisionMakerNotes && asPoints(decisionMakerNotes),
+  ]);
+  add("QUALIFICATION NOTES", [qualificationNotes && asPoints(qualificationNotes)]);
+  add("IT / GROWTH INTENT SIGNAL", [growthIntent && asPoints(growthIntent)]);
+  add("OUTREACH", [
+    emailStatus && `Email status: ${emailStatus}`,
+    outreachStatus && `Outreach status: ${outreachStatus}`,
+    contactInfoSource && `Email/phone found at: ${contactInfoSource}`,
+  ]);
+  add("SOURCES", [researchSourceUrl && `Primary source: ${researchSourceUrl}`]);
 
-  const noteBlocks: string[] = [];
-  if (factLines.length) noteBlocks.push(factLines.join("\n"));
-  for (const [label, value] of narrativeSections) {
-    if (value) noteBlocks.push(`${label}:\n${value}`);
+  // Anything left over: a column this importer doesn't know about yet
+  // (skipping blank "__EMPTY" filler columns from unlabeled headers).
+  const otherLines: string[] = [];
+  for (const [header, raw] of Object.entries(row)) {
+    const key = header.trim().toLowerCase();
+    if (!key || key.startsWith("__empty") || knownHeaders.has(key)) continue;
+    const value = raw === null || raw === undefined ? "" : String(raw).trim();
+    if (value) otherLines.push(`${header.trim()}: ${value}`);
   }
-  if (genericNotes) noteBlocks.push(genericNotes);
-  const researchNote = noteBlocks.join("\n\n");
+  add("OTHER DETAILS", otherLines);
+  add("NOTES", [genericNotes]);
 
-  // Normalized so "AZ" and "Arizona" from two different source
-  // spreadsheets land as the same filterable value (see normalizeState).
-  const billingState = normalizeState(pickField(row, ["state", "billing state"]));
+  const researchNote = sections.length
+    ? [RESEARCH_NOTE_TITLE, ...sections.map(([heading, lines]) => `${heading}\n${lines.join("\n")}`)].join("\n\n")
+    : "";
 
   return {
     name,
@@ -774,23 +839,23 @@ function parseProspectRow(row: Record<string, unknown>, batchResearchedAt: Date 
     estimatedValue,
     nextFollowUpAt,
     employeeCount: parseEmployeeEstimate(employeeEstimate),
-    industry: pickField(row, ["industry"]),
-    website: pickField(row, ["website", "url", "web site"]),
-    phone: pickField(row, ["phone", "company phone", "phone number", "main phone"]),
-    email: pickField(row, ["email", "company email"]),
-    publicEmail: pickField(row, ["public email", "public business email"]),
-    source: pickField(row, ["source", "lead source"]),
-    billingStreet: pickField(row, ["street", "address", "billing street"]),
-    billingCity: pickField(row, ["city", "billing city"]),
+    industry,
+    website,
+    phone,
+    email,
+    publicEmail,
+    source: leadSource,
+    billingStreet,
+    billingCity,
     billingState,
-    billingZip: pickField(row, ["zip", "zip code", "postal code", "billing zip"]),
+    billingZip,
     researchConfidence,
     researchNote,
     contactFirstName: contactFirstNameRaw || splitFirst || "",
     contactLastName: contactLastNameRaw || splitRest.join(" ") || "",
-    contactEmail: pickField(row, ["contact email"]),
-    contactPhone: pickField(row, ["contact phone", "contact phone number"]),
-    contactTitle: pickField(row, ["contact title", "title", "job title"]),
+    contactEmail,
+    contactPhone,
+    contactTitle,
   };
 }
 
@@ -968,23 +1033,42 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
           }
         }
 
-        // Backfill the spreadsheet's qualitative research note (the fact
-        // lines + narrative sections parseProspectRow builds — Business/IT
-        // signals, security signals, decision-maker notes, etc.) the same
-        // "only touch what's currently blank" way as every field above,
-        // just at the note level rather than a single column: a prospect
-        // that already has at least one note (earlier research note, or
-        // staff activity since) is left alone; one with zero notes yet gets
-        // this row's research note added as its own note, kept separate
-        // from the short "filled in X, Y" audit note below. This is what
-        // was missing when a prospect got created by an earlier, thinner
-        // import and only picked up phone/email later via updateExisting —
-        // the structured fields backfilled, but the note text never did.
+        // The spreadsheet's research note (every column without a field of
+        // its own — see parseProspectRow). Unlike the fields above, this
+        // note is entirely the importer's own output (notes can't be edited
+        // in the app, and staff notes never carry its title/headings), so
+        // it's refreshed rather than blank-filled: added if this prospect
+        // has no research note yet, replaced in place if the one it has —
+        // including the older run-together format — differs from what this
+        // file produces now. Audit notes ("Updated via spreadsheet
+        // import…") and staff notes are never matched or touched.
+        // Re-running the same file is a no-op for notes.
         if (parsed.researchNote) {
-          const [anyNote] = await db.select({ id: notes.id }).from(notes).where(eq(notes.customerId, match.id)).limit(1);
-          if (!anyNote) {
+          const [existingResearch] = await db
+            .select({ id: notes.id, body: notes.body })
+            .from(notes)
+            .where(
+              and(
+                eq(notes.customerId, match.id),
+                or(
+                  ilike(notes.body, `${RESEARCH_NOTE_TITLE}%`),
+                  // Older import formats, before the note got its title line.
+                  ilike(notes.body, "Prospect ID:%"),
+                  ilike(notes.body, "%Business / IT signals:%"),
+                  ilike(notes.body, "%Security / complexity signals:%"),
+                  ilike(notes.body, "%Decision-maker notes:%"),
+                  ilike(notes.body, "%Qualification notes:%")
+                )
+              )
+            )
+            .orderBy(asc(notes.createdAt))
+            .limit(1);
+          if (!existingResearch) {
             await db.insert(notes).values({ customerId: match.id, authorId: user.id, type: "NOTE", body: parsed.researchNote });
             filled.push("research notes");
+          } else if (existingResearch.body !== parsed.researchNote) {
+            await db.update(notes).set({ body: parsed.researchNote }).where(eq(notes.id, existingResearch.id));
+            filled.push("refreshed research notes");
           }
         }
 
