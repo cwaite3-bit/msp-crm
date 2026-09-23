@@ -627,24 +627,165 @@ function parseEmployeeEstimate(raw: string): number | null {
 export type ImportProspectsResult = {
   ok: boolean;
   imported: number;
+  updated: number;
   skipped: number;
   errors: string[];
 };
 
-// Bulk-loads an initial prospect list from an uploaded .xlsx/.csv file.
-// Every imported row lands as a customer with status=PROSPECT (see the
-// note atop this section on why that's the whole model) — nothing here is
-// specific to a one-time import; staff can keep re-uploading additional
-// batches later the same way. Rows that don't even have a company name are
-// skipped outright (nothing to create), and a row whose company name
-// exactly matches an existing customer is also skipped rather than
-// creating a duplicate — re-running an import (or an overlapping list)
-// shouldn't double up records.
+// Everything importProspects reads out of one spreadsheet row, before it
+// decides whether that row becomes a brand-new prospect (insertProspectRow
+// path below) or gets merged into an existing one (the updateExisting path).
+// Pulled out on its own so both paths parse a row exactly the same way —
+// re-running the same file through the "update existing" path should never
+// disagree with what a fresh import of it would have created.
+type ParsedProspectRow = {
+  name: string;
+  stage: ProspectStage;
+  estimatedValue: string; // digits/decimal only, "" if none on the row
+  nextFollowUpAt: Date | null;
+  employeeCount: number | null;
+  industry: string;
+  website: string;
+  phone: string;
+  email: string;
+  source: string;
+  billingStreet: string;
+  billingCity: string;
+  billingState: string;
+  billingZip: string;
+  researchConfidence: string;
+  researchNote: string;
+  contactFirstName: string;
+  contactLastName: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactTitle: string;
+};
+
+function parseProspectRow(row: Record<string, unknown>, batchResearchedAt: Date | null): ParsedProspectRow {
+  const name = pickField(row, ["company", "company name", "name", "business", "business name", "organization", "account name"]);
+  const stageRaw = pickField(row, ["stage", "status", "pipeline stage", "sales stage"]);
+  const contactFirstNameRaw = pickField(row, ["contact first name", "first name", "contact firstname"]);
+  const contactLastNameRaw = pickField(row, ["contact last name", "last name", "contact lastname"]);
+  const contactFullName = pickField(row, ["contact name", "contact", "contact person", "decision maker"]);
+  const [splitFirst, ...splitRest] = contactFullName ? contactFullName.split(/\s+/) : [];
+
+  const estimatedRaw = pickField(row, ["estimated value", "est. value", "est value", "deal size", "value", "estimated mrr", "mrr"]);
+  const estimatedValue = estimatedRaw.replace(/[^0-9.]/g, "");
+  const followUpRaw = pickField(row, ["next follow up", "next follow-up", "follow up date", "follow-up date", "next follow up date"]);
+  let nextFollowUpAt: Date | null = null;
+  if (followUpRaw) {
+    const parsedDate = new Date(followUpRaw);
+    if (!Number.isNaN(parsedDate.getTime())) nextFollowUpAt = parsedDate;
+  }
+
+  // Pre-qualification research fields — populated by research-style
+  // exports (a prospecting sweep) rather than a plain contact list.
+  // There's no dedicated column for any of this (see the note above the
+  // Prospects section on why the data model is deliberately just
+  // `customers` + `contacts` + `notes`), so it's logged as one neatly
+  // organized activity note on the imported customer instead — a short
+  // "at a glance" block of facts, then each longer narrative field under
+  // its own heading, blank-line separated rather than run together.
+  // NotesPanel renders a note's body with `whitespace-pre-wrap`, so this
+  // formatting (line breaks, blank lines) displays exactly as built here.
+  const externalId = pickField(row, ["prospect id", "external id", "id"]);
+  const researchConfidence = pickField(row, ["confidence", "research confidence"]);
+  const researchSourceUrl = pickField(row, ["primary source", "source url", "research source", "source"]);
+  const existingItProvider = pickField(row, ["existing it provider", "current it provider", "incumbent provider", "incumbent it"]);
+  const rowResearchedRaw = pickField(row, ["last researched", "research date", "date researched"]);
+  let researchedAt = batchResearchedAt;
+  if (rowResearchedRaw) {
+    const parsedDate = new Date(rowResearchedRaw);
+    if (!Number.isNaN(parsedDate.getTime())) researchedAt = parsedDate;
+  }
+
+  // Employee Estimate in a research export is typically a range ("11-50"),
+  // not a single verified count — the field guide explicitly warns not to
+  // treat it as exact, so it's folded into the research note below rather
+  // than forced into the numeric employeeCount column.
+  const employeeEstimate = pickField(row, ["employee estimate", "employee range", "headcount estimate"]);
+  const employeeEvidence = pickField(row, ["employee evidence"]);
+  const genericNotes = pickField(row, ["notes", "note", "description", "comments"]);
+
+  const factLines: string[] = [];
+  if (externalId) factLines.push(`Prospect ID: ${externalId}`);
+  if (researchConfidence) factLines.push(`Confidence: ${researchConfidence}`);
+  if (existingItProvider) factLines.push(`Existing IT provider: ${existingItProvider}`);
+  if (researchSourceUrl) factLines.push(`Source: ${researchSourceUrl}`);
+  if (researchedAt) factLines.push(`Researched: ${formatDate(researchedAt)}`);
+  if (employeeEstimate) factLines.push(`Employee estimate: ${employeeEstimate}${employeeEvidence ? ` (${employeeEvidence})` : ""}`);
+
+  const narrativeSections: [string, string][] = [
+    ["Business / IT signals", pickField(row, ["business / it signals", "business/it signals", "business it signals"])],
+    ["Security / complexity signals", pickField(row, ["security / complexity signals", "security/complexity signals"])],
+    ["Decision-maker notes", pickField(row, ["decision-maker notes", "decision maker notes"])],
+    ["Qualification notes", pickField(row, ["qualification notes"])],
+    ["IT / growth intent signal", pickField(row, ["it / growth intent signal", "it/growth intent signal"])],
+  ];
+
+  const noteBlocks: string[] = [];
+  if (factLines.length) noteBlocks.push(factLines.join("\n"));
+  for (const [label, value] of narrativeSections) {
+    if (value) noteBlocks.push(`${label}:\n${value}`);
+  }
+  if (genericNotes) noteBlocks.push(genericNotes);
+  const researchNote = noteBlocks.join("\n\n");
+
+  // Normalized so "AZ" and "Arizona" from two different source
+  // spreadsheets land as the same filterable value (see normalizeState).
+  const billingState = normalizeState(pickField(row, ["state", "billing state"]));
+
+  return {
+    name,
+    stage: matchStage(stageRaw || "NEW"),
+    estimatedValue,
+    nextFollowUpAt,
+    employeeCount: parseEmployeeEstimate(employeeEstimate),
+    industry: pickField(row, ["industry"]),
+    website: pickField(row, ["website", "url", "web site"]),
+    phone: pickField(row, ["phone", "company phone", "phone number", "main phone"]),
+    email: pickField(row, ["email", "company email", "public business email"]),
+    source: pickField(row, ["source", "lead source"]),
+    billingStreet: pickField(row, ["street", "address", "billing street"]),
+    billingCity: pickField(row, ["city", "billing city"]),
+    billingState,
+    billingZip: pickField(row, ["zip", "zip code", "postal code", "billing zip"]),
+    researchConfidence,
+    researchNote,
+    contactFirstName: contactFirstNameRaw || splitFirst || "",
+    contactLastName: contactLastNameRaw || splitRest.join(" ") || "",
+    contactEmail: pickField(row, ["contact email"]),
+    contactPhone: pickField(row, ["contact phone", "contact phone number"]),
+    contactTitle: pickField(row, ["contact title", "title", "job title"]),
+  };
+}
+
+// Bulk-loads a prospect list from an uploaded .xlsx/.csv file. Every newly
+// created row lands as a customer with status=PROSPECT (see the note atop
+// this section on why that's the whole model) — nothing here is specific to
+// a one-time import; staff can keep re-uploading additional batches later
+// the same way. Rows that don't even have a company name are skipped
+// outright (nothing to create).
+//
+// A row whose company name matches an existing customer is, by default,
+// skipped rather than creating a duplicate — re-running the same file
+// shouldn't double up records. Passing `updateExisting: true` (a checkbox in
+// the Import dialog) changes that for matched rows only: instead of
+// skipping, it fills in whichever of that prospect's fields are currently
+// blank from the row's data — company phone/email/website/address/source/
+// confidence/estimated value/employee count, plus the primary contact's
+// email/phone/title, or adding a first contact if none exists yet. It never
+// overwrites a field that already has a value, so re-running an enrichment
+// pass (or the same file twice) can't clobber anything staff have since
+// edited by hand — the exact same "only fill blanks" rule the Confidence
+// backfill tools already use.
 export async function importProspects(formData: FormData): Promise<ImportProspectsResult> {
   const user = await requireUser();
   const file = formData.get("file") as File | null;
+  const updateExisting = formData.get("updateExisting") === "on";
   if (!file || file.size === 0) {
-    return { ok: false, imported: 0, skipped: 0, errors: ["No file was uploaded"] };
+    return { ok: false, imported: 0, updated: 0, skipped: 0, errors: ["No file was uploaded"] };
   }
 
   let rows: Record<string, unknown>[];
@@ -653,7 +794,7 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
     const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) return { ok: false, imported: 0, skipped: 0, errors: ["The file has no sheets"] };
+    if (!firstSheetName) return { ok: false, imported: 0, updated: 0, skipped: 0, errors: ["The file has no sheets"] };
     rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: "" });
 
     // Some research-style exports (e.g. a prospecting sweep) include a
@@ -673,18 +814,36 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
       }
     }
   } catch {
-    return { ok: false, imported: 0, skipped: 0, errors: ["Could not read that file — is it a valid .xlsx or .csv?"] };
+    return { ok: false, imported: 0, updated: 0, skipped: 0, errors: ["Could not read that file — is it a valid .xlsx or .csv?"] };
   }
 
   if (rows.length === 0) {
-    return { ok: false, imported: 0, skipped: 0, errors: ["No rows found in the first sheet"] };
+    return { ok: false, imported: 0, updated: 0, skipped: 0, errors: ["No rows found in the first sheet"] };
   }
 
-  const existing = await db.select({ name: customers.name }).from(customers);
-  const existingNames = new Set(existing.map((c) => c.name.trim().toLowerCase()));
+  const existing = await db
+    .select({
+      id: customers.id,
+      name: customers.name,
+      phone: customers.phone,
+      email: customers.email,
+      website: customers.website,
+      industry: customers.industry,
+      source: customers.source,
+      billingStreet: customers.billingStreet,
+      billingCity: customers.billingCity,
+      billingState: customers.billingState,
+      billingZip: customers.billingZip,
+      estimatedMonthlyValue: customers.estimatedMonthlyValue,
+      employeeCount: customers.employeeCount,
+      researchConfidence: customers.researchConfidence,
+    })
+    .from(customers);
+  const existingByName = new Map(existing.map((c) => [c.name.trim().toLowerCase(), c]));
   const stateAssignments = await getStateAssignments();
 
   let imported = 0;
+  let updated = 0;
   let skipped = 0;
   const errors: string[] = [];
 
@@ -692,149 +851,177 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
     const row = rows[i];
     const rowNum = i + 2; // header is row 1 in the spreadsheet
 
-    const name = pickField(row, ["company", "company name", "name", "business", "business name", "organization", "account name"]);
-    if (!name) {
+    const parsed = parseProspectRow(row, batchResearchedAt);
+    if (!parsed.name) {
       skipped++;
       errors.push(`Row ${rowNum}: no company name — skipped`);
       continue;
     }
-    if (existingNames.has(name.toLowerCase())) {
-      skipped++;
-      errors.push(`Row ${rowNum}: "${name}" already exists — skipped`);
+
+    const match = existingByName.get(parsed.name.toLowerCase());
+    if (match) {
+      if (!updateExisting) {
+        skipped++;
+        errors.push(`Row ${rowNum}: "${parsed.name}" already exists — skipped`);
+        continue;
+      }
+
+      try {
+        const patch: Partial<typeof customers.$inferInsert> = {};
+        const filled: string[] = [];
+        if (parsed.phone && !match.phone) { patch.phone = parsed.phone; filled.push("phone"); }
+        if (parsed.email && !match.email) { patch.email = parsed.email; filled.push("email"); }
+        if (parsed.website && !match.website) { patch.website = parsed.website; filled.push("website"); }
+        if (parsed.industry && !match.industry) { patch.industry = parsed.industry; filled.push("industry"); }
+        if (parsed.source && !match.source) { patch.source = parsed.source; filled.push("source"); }
+        if (parsed.billingStreet && !match.billingStreet) { patch.billingStreet = parsed.billingStreet; filled.push("address"); }
+        if (parsed.billingCity && !match.billingCity) { patch.billingCity = parsed.billingCity; filled.push("city"); }
+        if (parsed.billingState && !match.billingState) { patch.billingState = parsed.billingState; filled.push("state"); }
+        if (parsed.billingZip && !match.billingZip) { patch.billingZip = parsed.billingZip; filled.push("zip"); }
+        if (parsed.researchConfidence && !match.researchConfidence) {
+          patch.researchConfidence = parsed.researchConfidence;
+          filled.push("confidence");
+        }
+        if (parsed.estimatedValue && !match.estimatedMonthlyValue) {
+          patch.estimatedMonthlyValue = parsed.estimatedValue;
+          filled.push("estimated value");
+        }
+        if (parsed.employeeCount !== null && match.employeeCount === null) {
+          patch.employeeCount = parsed.employeeCount;
+          filled.push("employee count");
+        }
+
+        if (Object.keys(patch).length) {
+          await db.update(customers).set({ ...patch, updatedAt: new Date() }).where(eq(customers.id, match.id));
+        }
+
+        // Contact enrichment mirrors the same "only fill blanks" rule: top
+        // up the existing primary contact's email/phone/title, or add a
+        // first contact if this prospect somehow doesn't have one yet —
+        // never create a second contact just because the row has different
+        // contact info than the one already on file.
+        const hasNewContactInfo = parsed.contactFirstName || parsed.contactLastName || parsed.contactEmail || parsed.contactPhone;
+        if (hasNewContactInfo) {
+          const [primaryContact] = await db
+            .select()
+            .from(contacts)
+            .where(and(eq(contacts.customerId, match.id), eq(contacts.isPrimary, true)))
+            .limit(1);
+
+          if (primaryContact) {
+            const contactPatch: Partial<typeof contacts.$inferInsert> = {};
+            if (parsed.contactEmail && !primaryContact.email) { contactPatch.email = parsed.contactEmail; filled.push("contact email"); }
+            if (parsed.contactPhone && !primaryContact.phone) { contactPatch.phone = parsed.contactPhone; filled.push("contact phone"); }
+            if (parsed.contactTitle && !primaryContact.title) { contactPatch.title = parsed.contactTitle; filled.push("contact title"); }
+            if (Object.keys(contactPatch).length) {
+              await db.update(contacts).set(contactPatch).where(eq(contacts.id, primaryContact.id));
+            }
+          } else {
+            const [anyContact] = await db.select({ id: contacts.id }).from(contacts).where(eq(contacts.customerId, match.id)).limit(1);
+            if (!anyContact) {
+              await db.insert(contacts).values({
+                customerId: match.id,
+                firstName: parsed.contactFirstName || "Primary",
+                lastName: parsed.contactLastName,
+                email: parsed.contactEmail || null,
+                phone: parsed.contactPhone || null,
+                title: parsed.contactTitle || null,
+                isPrimary: true,
+              });
+              filled.push("added a contact");
+            }
+          }
+        }
+
+        if (filled.length) {
+          await db.insert(notes).values({
+            customerId: match.id,
+            authorId: user.id,
+            type: "NOTE",
+            body: `Updated via spreadsheet import: filled in ${filled.join(", ")}.`,
+          });
+          updated++;
+          errors.push(`Row ${rowNum}: "${parsed.name}" already exists — filled in ${filled.join(", ")}`);
+        } else {
+          skipped++;
+          errors.push(`Row ${rowNum}: "${parsed.name}" already exists, nothing new to add — skipped`);
+        }
+      } catch (err) {
+        errors.push(`Row ${rowNum} ("${parsed.name}"): ${err instanceof Error ? err.message : "failed to update"}`);
+      }
       continue;
     }
 
-    const stageRaw = pickField(row, ["stage", "status", "pipeline stage", "sales stage"]);
-    const contactFirstName = pickField(row, ["contact first name", "first name", "contact firstname"]);
-    const contactLastName = pickField(row, ["contact last name", "last name", "contact lastname"]);
-    const contactFullName = pickField(row, ["contact name", "contact", "contact person", "decision maker"]);
-    const [splitFirst, ...splitRest] = contactFullName ? contactFullName.split(/\s+/) : [];
-
-    const estimatedRaw = pickField(row, ["estimated value", "est. value", "est value", "deal size", "value", "estimated mrr", "mrr"]);
-    const estimatedValue = estimatedRaw.replace(/[^0-9.]/g, "");
-    const followUpRaw = pickField(row, ["next follow up", "next follow-up", "follow up date", "follow-up date", "next follow up date"]);
-    let nextFollowUpAt: Date | null = null;
-    if (followUpRaw) {
-      const parsedDate = new Date(followUpRaw);
-      if (!Number.isNaN(parsedDate.getTime())) nextFollowUpAt = parsedDate;
-    }
-
-    // Pre-qualification research fields — populated by research-style
-    // exports (a prospecting sweep) rather than a plain contact list.
-    // There's no dedicated column for any of this (see the note above the
-    // Prospects section on why the data model is deliberately just
-    // `customers` + `contacts` + `notes`), so it's logged as one neatly
-    // organized activity note on the imported customer instead — a short
-    // "at a glance" block of facts, then each longer narrative field under
-    // its own heading, blank-line separated rather than run together.
-    // NotesPanel renders a note's body with `whitespace-pre-wrap`, so this
-    // formatting (line breaks, blank lines) displays exactly as built here.
-    const externalId = pickField(row, ["prospect id", "external id", "id"]);
-    const researchConfidence = pickField(row, ["confidence", "research confidence"]);
-    const researchSourceUrl = pickField(row, ["primary source", "source url", "research source", "source"]);
-    const existingItProvider = pickField(row, ["existing it provider", "current it provider", "incumbent provider", "incumbent it"]);
-    const rowResearchedRaw = pickField(row, ["last researched", "research date", "date researched"]);
-    let researchedAt = batchResearchedAt;
-    if (rowResearchedRaw) {
-      const parsedDate = new Date(rowResearchedRaw);
-      if (!Number.isNaN(parsedDate.getTime())) researchedAt = parsedDate;
-    }
-
-    // Employee Estimate in a research export is typically a range ("11-50"),
-    // not a single verified count — the field guide explicitly warns not to
-    // treat it as exact, so it's folded into the research note below rather
-    // than forced into the numeric employeeCount column.
-    const employeeEstimate = pickField(row, ["employee estimate", "employee range", "headcount estimate"]);
-    const employeeEvidence = pickField(row, ["employee evidence"]);
-    const genericNotes = pickField(row, ["notes", "note", "description", "comments"]);
-
-    const factLines: string[] = [];
-    if (externalId) factLines.push(`Prospect ID: ${externalId}`);
-    if (researchConfidence) factLines.push(`Confidence: ${researchConfidence}`);
-    if (existingItProvider) factLines.push(`Existing IT provider: ${existingItProvider}`);
-    if (researchSourceUrl) factLines.push(`Source: ${researchSourceUrl}`);
-    if (researchedAt) factLines.push(`Researched: ${formatDate(researchedAt)}`);
-    if (employeeEstimate) factLines.push(`Employee estimate: ${employeeEstimate}${employeeEvidence ? ` (${employeeEvidence})` : ""}`);
-
-    const narrativeSections: [string, string][] = [
-      ["Business / IT signals", pickField(row, ["business / it signals", "business/it signals", "business it signals"])],
-      ["Security / complexity signals", pickField(row, ["security / complexity signals", "security/complexity signals"])],
-      ["Decision-maker notes", pickField(row, ["decision-maker notes", "decision maker notes"])],
-      ["Qualification notes", pickField(row, ["qualification notes"])],
-      ["IT / growth intent signal", pickField(row, ["it / growth intent signal", "it/growth intent signal"])],
-    ];
-
-    const noteBlocks: string[] = [];
-    if (factLines.length) noteBlocks.push(factLines.join("\n"));
-    for (const [label, value] of narrativeSections) {
-      if (value) noteBlocks.push(`${label}:\n${value}`);
-    }
-    if (genericNotes) noteBlocks.push(genericNotes);
-    const researchNote = noteBlocks.join("\n\n");
-
-    // Normalized so "AZ" and "Arizona" from two different source
-    // spreadsheets land as the same filterable value (see normalizeState).
     // If a territory rule has been set for this state (Prospects → Assign
     // by state), the imported prospect starts pre-assigned to that owner
     // instead of Unassigned.
-    const billingState = normalizeState(pickField(row, ["state", "billing state"]));
-    const assignedOwnerId = billingState ? stateAssignments[billingState] : undefined;
+    const assignedOwnerId = parsed.billingState ? stateAssignments[parsed.billingState] : undefined;
 
     try {
       const [customer] = await db
         .insert(customers)
         .values({
-          name,
+          name: parsed.name,
           status: "PROSPECT",
-          stage: matchStage(stageRaw || "NEW"),
-          estimatedMonthlyValue: estimatedValue || null,
-          nextFollowUpAt,
-          employeeCount: parseEmployeeEstimate(employeeEstimate),
+          stage: parsed.stage,
+          estimatedMonthlyValue: parsed.estimatedValue || null,
+          nextFollowUpAt: parsed.nextFollowUpAt,
+          employeeCount: parsed.employeeCount,
           accountOwnerId: assignedOwnerId || null,
-          industry: pickField(row, ["industry"]) || null,
-          website: pickField(row, ["website", "url", "web site"]) || null,
-          phone: pickField(row, ["phone", "company phone", "phone number", "main phone"]) || null,
-          email: pickField(row, ["email", "company email", "public business email"]) || null,
-          source: pickField(row, ["source", "lead source"]) || null,
-          billingStreet: pickField(row, ["street", "address", "billing street"]) || null,
-          billingCity: pickField(row, ["city", "billing city"]) || null,
-          billingState: billingState || null,
-          billingZip: pickField(row, ["zip", "zip code", "postal code", "billing zip"]) || null,
-          researchConfidence: researchConfidence || null,
+          industry: parsed.industry || null,
+          website: parsed.website || null,
+          phone: parsed.phone || null,
+          email: parsed.email || null,
+          source: parsed.source || null,
+          billingStreet: parsed.billingStreet || null,
+          billingCity: parsed.billingCity || null,
+          billingState: parsed.billingState || null,
+          billingZip: parsed.billingZip || null,
+          researchConfidence: parsed.researchConfidence || null,
         })
         .returning();
 
-      const contactEmail = pickField(row, ["contact email"]);
-      const contactPhone = pickField(row, ["contact phone", "contact phone number"]);
-      const contactTitle = pickField(row, ["contact title", "title", "job title"]);
-      const firstName = contactFirstName || splitFirst || "";
-      const lastName = contactLastName || splitRest.join(" ") || "";
-      if (firstName || lastName || contactEmail || contactPhone) {
+      if (parsed.contactFirstName || parsed.contactLastName || parsed.contactEmail || parsed.contactPhone) {
         await db.insert(contacts).values({
           customerId: customer.id,
-          firstName: firstName || "Primary",
-          lastName,
-          email: contactEmail || null,
-          phone: contactPhone || null,
-          title: contactTitle || null,
+          firstName: parsed.contactFirstName || "Primary",
+          lastName: parsed.contactLastName,
+          email: parsed.contactEmail || null,
+          phone: parsed.contactPhone || null,
+          title: parsed.contactTitle || null,
           isPrimary: true,
         });
       }
 
-      if (researchNote) {
-        await db.insert(notes).values({ customerId: customer.id, authorId: user.id, body: researchNote, type: "NOTE" });
+      if (parsed.researchNote) {
+        await db.insert(notes).values({ customerId: customer.id, authorId: user.id, body: parsed.researchNote, type: "NOTE" });
       }
 
-      existingNames.add(name.toLowerCase());
+      existingByName.set(parsed.name.toLowerCase(), {
+        id: customer.id,
+        name: parsed.name,
+        phone: parsed.phone || null,
+        email: parsed.email || null,
+        website: parsed.website || null,
+        industry: parsed.industry || null,
+        source: parsed.source || null,
+        billingStreet: parsed.billingStreet || null,
+        billingCity: parsed.billingCity || null,
+        billingState: parsed.billingState || null,
+        billingZip: parsed.billingZip || null,
+        estimatedMonthlyValue: parsed.estimatedValue || null,
+        employeeCount: parsed.employeeCount,
+        researchConfidence: parsed.researchConfidence || null,
+      });
       imported++;
     } catch (err) {
-      errors.push(`Row ${rowNum} ("${name}"): ${err instanceof Error ? err.message : "failed to import"}`);
+      errors.push(`Row ${rowNum} ("${parsed.name}"): ${err instanceof Error ? err.message : "failed to import"}`);
     }
   }
 
   revalidatePath("/prospects");
   revalidatePath("/customers");
-  return { ok: true, imported, skipped, errors };
+  return { ok: true, imported, updated, skipped, errors };
 }
 
 export async function addContact(customerId: string, formData: FormData) {

@@ -14,6 +14,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { importProspects, type ImportProspectsResult } from "@/server/actions/customers";
 
@@ -35,7 +36,7 @@ export function ImportProspectsDialog() {
     startTransition(async () => {
       const res = await importProspects(formData);
       setResult(res);
-      if (res.ok && res.imported > 0) router.refresh();
+      if (res.ok && (res.imported > 0 || res.updated > 0)) router.refresh();
     });
   }
 
@@ -61,7 +62,7 @@ export function ImportProspectsDialog() {
           <DialogDescription>
             Upload an .xlsx or .csv file. The first sheet is used, and columns are matched by name
             (e.g. &ldquo;Company&rdquo;, &ldquo;Contact Name&rdquo;, &ldquo;Stage&rdquo;) — order doesn&rsquo;t matter. Rows whose
-            company name already exists are skipped so you can re-run an import safely.
+            company name already exists are skipped by default so you can re-run an import safely.
           </DialogDescription>
         </DialogHeader>
         <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -78,6 +79,18 @@ export function ImportProspectsDialog() {
             {fileName && <p className="text-xs text-slate-500">{fileName}</p>}
           </div>
 
+          <div className="flex items-start gap-2 rounded-md border border-slate-200 p-3">
+            <Checkbox id="updateExisting" name="updateExisting" className="mt-0.5" />
+            <Label htmlFor="updateExisting" className="flex flex-col gap-0.5 font-normal">
+              <span className="text-sm font-medium text-slate-900">Update existing prospects with new info</span>
+              <span className="text-xs text-slate-500">
+                For a company name that already exists, fill in whatever&rsquo;s currently blank (phone, email,
+                address, confidence, etc.) from this file instead of skipping it. Never overwrites a field
+                that already has a value.
+              </span>
+            </Label>
+          </div>
+
           {result && (
             <div
               className={`flex flex-col gap-2 rounded-md border p-3 text-sm ${
@@ -90,8 +103,8 @@ export function ImportProspectsDialog() {
                 {result.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
                 {result.ok
                   ? `Imported ${result.imported} prospect${result.imported === 1 ? "" : "s"}${
-                      result.skipped ? `, skipped ${result.skipped}` : ""
-                    }.`
+                      result.updated ? `, updated ${result.updated}` : ""
+                    }${result.skipped ? `, skipped ${result.skipped}` : ""}.`
                   : "Import failed."}
               </div>
               {result.errors.length > 0 && (
