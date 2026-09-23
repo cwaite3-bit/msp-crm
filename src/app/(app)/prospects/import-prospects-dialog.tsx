@@ -85,7 +85,8 @@ export function ImportProspectsDialog() {
               <span className="text-sm font-medium text-slate-900">Update existing prospects with new info</span>
               <span className="text-xs text-slate-500">
                 For a company name that already exists, fill in whatever&rsquo;s currently blank (phone, email,
-                address, confidence, etc.) from this file instead of skipping it. Never overwrites a field
+                address, confidence, etc.) from this file instead of skipping it, and adds the row&rsquo;s
+                research note if that prospect doesn&rsquo;t already have one. Never overwrites a field or note
                 that already has a value.
               </span>
             </Label>

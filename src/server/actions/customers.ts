@@ -968,6 +968,26 @@ export async function importProspects(formData: FormData): Promise<ImportProspec
           }
         }
 
+        // Backfill the spreadsheet's qualitative research note (the fact
+        // lines + narrative sections parseProspectRow builds — Business/IT
+        // signals, security signals, decision-maker notes, etc.) the same
+        // "only touch what's currently blank" way as every field above,
+        // just at the note level rather than a single column: a prospect
+        // that already has at least one note (earlier research note, or
+        // staff activity since) is left alone; one with zero notes yet gets
+        // this row's research note added as its own note, kept separate
+        // from the short "filled in X, Y" audit note below. This is what
+        // was missing when a prospect got created by an earlier, thinner
+        // import and only picked up phone/email later via updateExisting —
+        // the structured fields backfilled, but the note text never did.
+        if (parsed.researchNote) {
+          const [anyNote] = await db.select({ id: notes.id }).from(notes).where(eq(notes.customerId, match.id)).limit(1);
+          if (!anyNote) {
+            await db.insert(notes).values({ customerId: match.id, authorId: user.id, type: "NOTE", body: parsed.researchNote });
+            filled.push("research notes");
+          }
+        }
+
         if (filled.length) {
           await db.insert(notes).values({
             customerId: match.id,
