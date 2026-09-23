@@ -48,7 +48,9 @@ export function QuoteActions({
           ? ` <${effectiveEmail}>${usingPublicEmail ? " — public email, no contact email on file" : ""}`
           : " (no email on file)"
       }`
-    : "no contact selected on this quote";
+    : effectiveEmail
+      ? `this company's public email <${effectiveEmail}> (no contact selected on this quote)`
+      : "no contact selected on this quote, and no public email on file";
 
   function copyLink() {
     navigator.clipboard.writeText(publicUrl);

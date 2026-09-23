@@ -113,23 +113,25 @@ export async function notifyCustomerQuoteSent(quoteId: string, message?: string)
   const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
   if (!quote) return { sent: false, error: "Quote not found" };
 
-  if (!quote.contactId) {
-    return {
-      sent: false,
-      error: "No contact selected on this quote — pick one under Quote settings, or share the client link manually.",
-    };
-  }
-  const [contact] = await db.select().from(contacts).where(eq(contacts.id, quote.contactId)).limit(1);
+  // A contact is optional for sending, not required — a prospect pulled in
+  // from a research import often has a company public email but no named
+  // contact yet. Only look one up if the quote actually has one selected.
+  const contact = quote.contactId
+    ? (await db.select().from(contacts).where(eq(contacts.id, quote.contactId)).limit(1))[0]
+    : undefined;
   const [customer] = await db.select().from(customers).where(eq(customers.id, quote.customerId)).limit(1);
 
-  // Prefer the contact's own email; if they don't have one on file, fall
-  // back to the company's public email (e.g. filled in from a research-
-  // style prospect import) rather than blocking the send outright.
+  // Prefer the contact's own email; if there's no contact selected, or the
+  // selected contact has no email on file, fall back to the company's
+  // public email (e.g. filled in from a research-style prospect import)
+  // rather than blocking the send outright.
   const recipientEmail = contact?.email || customer?.publicEmail || null;
   if (!recipientEmail) {
     return {
       sent: false,
-      error: "The selected contact has no email on file, and there's no public email saved for this company either — add one, or share the client link manually.",
+      error: quote.contactId
+        ? "The selected contact has no email on file, and there's no public email saved for this company either — add one, or share the client link manually."
+        : "No contact selected on this quote, and there's no public email saved for this company either — pick a contact under Quote settings, add a public email, or share the client link manually.",
     };
   }
   if (!isEmailConfigured()) {
