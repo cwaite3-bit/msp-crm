@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -29,7 +29,9 @@ const NO_CONFIDENCE = "__none__"; // Radix Select can't use "" as an item value
 
 type Step = "lookup" | "researching" | "review";
 
-const EMPTY_LOOKUP: ResearchLookupInput = { name: "", city: "", state: "", website: "", knownInfo: "" };
+// State defaults to AZ — where almost all prospecting happens today; just
+// overwrite it for anywhere else.
+const EMPTY_LOOKUP: ResearchLookupInput = { name: "", city: "", state: "AZ", website: "", knownInfo: "" };
 
 // Editable subset of the record shown on the review step — everything that
 // lands in a real customers/contacts column. The rest of the research
@@ -46,7 +48,9 @@ type EditableField =
   | "website"
   | "publicEmail"
   | "decisionMaker"
-  | "decisionMakerTitle";
+  | "decisionMakerTitle"
+  | "employeeEstimate"
+  | "qualificationNotes";
 
 const REASON_LABEL: Record<DuplicateMatch["reasons"][number], string> = {
   name: "same name",
@@ -90,7 +94,6 @@ function Findings({ result }: { result: ResearchResult }) {
           ))}
         </dl>
       )}
-      {r.qualificationNotes && <p className="text-slate-700">{r.qualificationNotes}</p>}
       {lists
         .filter(([, items]) => items.length > 0)
         .map(([heading, items]) => (
@@ -148,6 +151,17 @@ export function ResearchBusinessDialog({
   // Closing the dialog mid-lookup can't cancel the server action, so each
   // run gets a token and a stale result is simply ignored.
   const runRef = useRef(0);
+  // Elapsed-seconds counter on the "researching" step, so a 60s lookup
+  // doesn't look frozen. Derived from a start time; the interval only
+  // ticks `now`.
+  const [researchStartedAt, setResearchStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (step !== "researching") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [step]);
+  const elapsedSeconds = researchStartedAt ? Math.max(0, Math.round((now - researchStartedAt) / 1000)) : 0;
 
   function reset() {
     runRef.current++;
@@ -171,6 +185,9 @@ export function ResearchBusinessDialog({
     if (!lookup.name.trim()) return;
     const run = ++runRef.current;
     setError(null);
+    const started = Date.now();
+    setResearchStartedAt(started);
+    setNow(started);
     setStep("researching");
     try {
       const res = await researchBusiness(lookup);
@@ -341,7 +358,7 @@ export function ResearchBusinessDialog({
             <div className="text-sm font-medium text-slate-800">Researching {lookup.name.trim()}…</div>
             <p className="max-w-sm text-xs text-slate-500">
               Searching the web, checking the email domain, and looking for duplicates. This usually takes 30–90
-              seconds — keep this window open.
+              seconds — keep this window open. ({elapsedSeconds}s)
             </p>
           </div>
         )}
@@ -397,6 +414,7 @@ export function ResearchBusinessDialog({
               {field("publicEmail", "Public email")}
               {field("decisionMaker", "Decision maker")}
               {field("decisionMakerTitle", "Title")}
+              {field("employeeEstimate", "Employee estimate")}
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="rb-confidence">Confidence</Label>
                 <Select value={record.confidence ?? NO_CONFIDENCE} onValueChange={updateConfidence}>
@@ -430,8 +448,20 @@ export function ResearchBusinessDialog({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rb-qualificationNotes">Qualification notes</Label>
+              <Textarea
+                id="rb-qualificationNotes"
+                rows={3}
+                value={record.qualificationNotes ?? ""}
+                onChange={(e) => updateRecord("qualificationNotes", e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               {record.confidence && <Badge variant="outline">{record.confidence} confidence</Badge>}
+              <Badge variant="outline">{record.emailStatus}</Badge>
+              {record.outreachStatus && <Badge variant="outline">{record.outreachStatus}</Badge>}
               <span>Stage: New · Source: Prospect Research</span>
             </div>
 

@@ -30,6 +30,11 @@ export type ResearchContact = {
 
 export type ResearchConfidence = "High" | "Medium" | "Low";
 
+// Same Email Status vocabulary as the ChatGPT prospecting-sweep spreadsheet,
+// so researched and imported prospects read the same way.
+export const EMAIL_STATUSES = ["Verified public email", "Email still needed", "Research needed"] as const;
+export type EmailStatus = (typeof EMAIL_STATUSES)[number];
+
 // One researched business, as returned by the model (after format guards).
 // Every field is nullable/empty rather than guessed — see the system prompt.
 export type ResearchRecord = {
@@ -54,7 +59,7 @@ export type ResearchRecord = {
   qualificationNotes: string | null;
   primarySource: string | null;
   emailPhoneSource: string | null;
-  emailStatus: string | null;
+  emailStatus: EmailStatus;
   outreachStatus: string | null;
 
   // Added fields
@@ -120,7 +125,7 @@ export type DuplicateMatch = {
 // Prompt
 // ---------------------------------------------------------------------------
 
-export const RESEARCH_SYSTEM_PROMPT = `You are a B2B sales researcher for an IT managed service provider (MSP) that sells managed IT, cybersecurity, and network infrastructure services to small and mid-sized businesses. Staff give you one business name (usually with a city/state) and you research it on the public web, then return ONE structured record that will be added to the MSP's CRM as a prospect.
+export const RESEARCH_SYSTEM_PROMPT = `You are a B2B sales researcher for Lockdown IT, a managed IT services provider (MSP) that sells managed IT, cybersecurity, and network infrastructure (networks, servers, firewalls, switches, workstations, Microsoft 365, backup) to small and mid-sized businesses. Staff give you one business name (usually with a city/state) and you research it on the public web, then return ONE structured record that will be added to the MSP's CRM as a prospect.
 
 Use web search. Good sources: the business's own website (About, Contact, Team, Careers pages), its Google Business Profile, LinkedIn company page, state corporation filings, local news, industry directories, and job postings. Use up to about 8 searches; stop when the record is reasonably complete.
 
@@ -129,12 +134,14 @@ Rules — follow all of them:
 - Never guess. If you could not find a value, use null (or [] for lists). Do not invent email addresses from a name pattern, and do not infer a phone number.
 - Make sure you have the RIGHT business: match the name AND the city/state given. If several businesses share the name, pick the one in the given location and say so in qualificationNotes. If you cannot confidently identify the business at all, return companyName exactly as given, set confidence to "Low", and explain in qualificationNotes.
 - Put each value in its correct field: mainPhone is a phone number only; website is a URL only (never a phone number or email); publicEmail is an email address only.
-- confidence is how sure you are that this record is accurate AND that this is a reasonable managed-IT prospect: "High" (identity confirmed on the business's own site/profile, key fields verified), "Medium" (identity likely, some fields unverified), or "Low".
+- confidence is how sure you are about the business's size and location: "High" = multiple consistent sources, "Medium" = one good source, "Low" = thin or conflicting sources, or you couldn't confirm it's the right business.
 - employeeEstimate is a range such as "11-50" when evidence supports one; employeeEvidence says what it's based on.
 - existingItProvider: an MSP / IT company the business appears to use (e.g. a "website by"/"IT by" credit, a case study or testimonial on an MSP's site, a job post mentioning one). Null if not found. Explain in existingItProviderEvidence.
 - complianceFrameworks: frameworks that likely apply given the industry (e.g. HIPAA for medical/dental/veterinary-with-human-data, PCI DSS for card payments, GLBA/FTC Safeguards for financial and auto dealers, CMMC/NIST 800-171 for defense contractors). Only include ones with a clear basis.
 - businessItSignals / securityComplexitySignals / itHiringSignals / recentNews / talkingPoints: short plain-English bullet strings. talkingPoints are 2-4 specific, non-generic openers an MSP salesperson could use, grounded in what you found.
-- emailStatus describes what you found for publicEmail (e.g. "Published on website", "Contact form only", "Not found"). outreachStatus is always "Not contacted".
+- emailStatus is exactly one of: "Verified public email" (publicEmail appears on the business's own site or listing), "Email still needed" (you found a phone but no email), or "Research needed" (neither).
+- outreachStatus is one short line on outreach readiness, e.g. "Ready for email + follow-up call", "Phone ready; email research needed", "Needs phone/email enrichment".
+- businessItSignals / securityComplexitySignals / qualificationNotes: write them the way an MSP salesperson wants them — what their systems, devices, uptime needs, regulated data, locations and growth say about their IT needs and fit for Lockdown IT.
 - primarySource is the single most useful URL. sourceUrls lists every URL you relied on.
 - additionalContacts: other named staff the business publishes (office manager, practice administrator, IT contact, owners), same privacy rules.
 
@@ -160,8 +167,8 @@ Respond with ONLY a single JSON object — no markdown fences, no commentary bef
   "qualificationNotes": string | null,
   "primarySource": string | null,
   "emailPhoneSource": string | null,
-  "emailStatus": string | null,
-  "outreachStatus": "Not contacted",
+  "emailStatus": "Verified public email" | "Email still needed" | "Research needed",
+  "outreachStatus": string | null,
   "existingItProvider": string | null,
   "existingItProviderEvidence": string | null,
   "complianceFrameworks": string[],
@@ -298,6 +305,15 @@ function normalizeConfidence(v: unknown): ResearchConfidence | null {
   return null;
 }
 
+// Anything off-vocabulary is re-derived from what was actually found,
+// exactly as the spreadsheet defines the three values.
+function normalizeEmailStatus(v: unknown, publicEmail: string | null, mainPhone: string | null): EmailStatus {
+  const s = (str(v) || "").toLowerCase();
+  const exact = EMAIL_STATUSES.find((e) => e.toLowerCase() === s);
+  if (exact) return exact;
+  return publicEmail ? "Verified public email" : mainPhone ? "Email still needed" : "Research needed";
+}
+
 function contactList(v: unknown): ResearchContact[] {
   if (!Array.isArray(v)) return [];
   const out: ResearchContact[] = [];
@@ -379,8 +395,8 @@ export function coerceResearchRecord(o: Record<string, unknown>, fallbackName = 
     qualificationNotes: str(o.qualificationNotes),
     primarySource: str(o.primarySource),
     emailPhoneSource: str(o.emailPhoneSource),
-    emailStatus: str(o.emailStatus),
-    outreachStatus: str(o.outreachStatus) || "Not contacted",
+    emailStatus: normalizeEmailStatus(o.emailStatus, publicEmail, mainPhone),
+    outreachStatus: str(o.outreachStatus),
     existingItProvider: str(o.existingItProvider),
     existingItProviderEvidence: str(o.existingItProviderEvidence),
     complianceFrameworks: strList(o.complianceFrameworks),
@@ -515,13 +531,12 @@ const MX_GATEWAYS: [RegExp, string][] = [
 export function classifyMx(domain: string, hosts: string[]): EmailProviderInfo {
   const clean = hosts.map((h) => h.toLowerCase().replace(/\.$/, "")).filter(Boolean);
   if (clean.length === 0) return { domain, provider: "No MX records found", mxHosts: [] };
-  for (const [re, label] of MX_PROVIDERS) {
-    if (clean.some((h) => re.test(h))) return { domain, provider: label, mxHosts: clean };
-  }
-  for (const [re, label] of MX_GATEWAYS) {
-    if (clean.some((h) => re.test(h))) {
-      return { domain, provider: `Behind ${label} (email security gateway — underlying provider not visible)`, mxHosts: clean };
-    }
+  const base = MX_PROVIDERS.find(([re]) => clean.some((h) => re.test(h)))?.[1];
+  const gateway = MX_GATEWAYS.find(([re]) => clean.some((h) => re.test(h)))?.[1];
+  if (base && gateway) return { domain, provider: `${base} (behind ${gateway})`, mxHosts: clean };
+  if (base) return { domain, provider: base, mxHosts: clean };
+  if (gateway) {
+    return { domain, provider: `Behind ${gateway} (email security gateway — underlying provider not visible)`, mxHosts: clean };
   }
   return { domain, provider: `Other / self-hosted (${clean[0]})`, mxHosts: clean };
 }
