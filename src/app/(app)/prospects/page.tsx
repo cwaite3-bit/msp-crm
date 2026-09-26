@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { auth } from "@/auth";
 import { searchProspects, listProspectFilterOptions, getStateAssignments } from "@/server/actions/customers";
 import { listUsers } from "@/server/actions/users";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,7 +12,13 @@ import { ProspectTable } from "./prospect-table";
 import { StateAssignmentsDialog } from "./state-assignments-dialog";
 import { BackfillConfidenceButton } from "./backfill-confidence-button";
 import { BackfillConfidenceFileDialog } from "./backfill-confidence-file-dialog";
+import { ResearchBusinessDialog } from "./research-business-dialog";
 import type { ProspectStage, SizeBucketValue } from "@/lib/prospect";
+
+// "Research a business" (ResearchBusinessDialog) runs a 30–90s AI + web
+// search lookup as a Server Action, and Server Actions inherit the calling
+// page's duration limit — so this page needs the longer ceiling.
+export const maxDuration = 300;
 
 export default async function ProspectsPage({
   searchParams,
@@ -38,7 +45,8 @@ export default async function ProspectsPage({
   const filterHasPhone = hasPhone === "1";
   const filterQuoteSent = quoteSent === "1";
 
-  const [rows, filterOptions, allUsers, stateAssignments] = await Promise.all([
+  const [session, rows, filterOptions, allUsers, stateAssignments] = await Promise.all([
+    auth(),
     searchProspects(query, {
       state: state || undefined,
       stage: (stage as ProspectStage) || undefined,
@@ -88,6 +96,7 @@ export default async function ProspectsPage({
                 </Link>
               </Button>
               <StateAssignmentsDialog states={filterOptions.states} staff={staff} initialAssignments={stateAssignments} />
+              <ResearchBusinessDialog staff={staff} currentUserId={session?.user?.id ?? ""} />
               <ImportProspectsDialog />
               <NewProspectDialog />
             </>

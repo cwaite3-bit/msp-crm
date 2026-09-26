@@ -31,6 +31,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
 import { listCatalog } from "@/server/actions/catalog";
+import { resolveAnthropicModel } from "@/server/anthropic-model";
 import {
   buildAiReviewPrompt,
   hashAiReviewInput,
@@ -159,11 +160,10 @@ export async function generateAiQuoteReview(quoteId: string): Promise<{ ok: bool
   if (!input) return { ok: false, error: "Quote not found" };
 
   const hash = hashAiReviewInput(input);
-  // Opus is the default here (not the cheaper Sonnet default used
-  // elsewhere) because this is a deliberately deep, manually-triggered,
-  // low-volume analysis — worth the stronger model. Override with
-  // ANTHROPIC_MODEL if you'd rather trade quality for cost.
-  const model = process.env.ANTHROPIC_MODEL || "claude-opus-5";
+  // Opus by default — see src/server/anthropic-model.ts (shared with
+  // Prospects → Research a business). Override with ANTHROPIC_MODEL if
+  // you'd rather trade quality for cost.
+  const model = resolveAnthropicModel();
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {

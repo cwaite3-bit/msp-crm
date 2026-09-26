@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -262,6 +262,19 @@ export function ProspectTable({
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // ?highlight=<id> (set by Research a business right after adding a
+  // prospect) rings that row for a few seconds so it's easy to spot. The
+  // ring fades by recording which id has already been shown, rather than
+  // clearing state synchronously in the effect.
+  const highlightId = searchParams.get("highlight");
+  const [fadedHighlightId, setFadedHighlightId] = useState<string | null>(null);
+  const activeHighlightId = highlightId && highlightId !== fadedHighlightId ? highlightId : null;
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setFadedHighlightId(highlightId), 4000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
+
   const mappableRows = useMemo(() => rows.filter((r) => mapQuery(r)), [rows]);
   const allMappableSelected = mappableRows.length > 0 && mappableRows.every((r) => selected.has(r.id));
 
@@ -422,7 +435,15 @@ export function ProspectTable({
               const overdue = followUp ? followUp < today : false;
               const query = mapQuery(row);
               return (
-                <TableRow key={row.id} className={pending ? "opacity-70" : undefined}>
+                <TableRow
+                  key={row.id}
+                  className={[
+                    pending ? "opacity-70" : "",
+                    row.id === activeHighlightId ? "bg-amber-50 ring-2 ring-inset ring-amber-400 transition-colors" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || undefined}
+                >
                   <TableCell>
                     <Checkbox
                       checked={selected.has(row.id)}
@@ -499,7 +520,12 @@ export function ProspectTable({
           const overdue = followUp ? followUp < today : false;
           const query = mapQuery(row);
           return (
-            <div key={row.id} className={`flex flex-col gap-3 p-4 ${pending ? "opacity-70" : ""}`}>
+            <div
+              key={row.id}
+              className={`flex flex-col gap-3 p-4 ${pending ? "opacity-70" : ""} ${
+                row.id === activeHighlightId ? "bg-amber-50 ring-2 ring-inset ring-amber-400" : ""
+              }`}
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-3">
                   <Checkbox

@@ -133,6 +133,22 @@ export const customers = pgTable(
     // rest of that import's narrative fields, which live in a notes entry)
     // specifically so the Prospects list can display and sort by it.
     researchConfidence: text("research_confidence"),
+    // Stable human-readable prospect ID, e.g. "RS-0001" for a record created
+    // by Prospects → Research a business (see
+    // src/server/actions/prospect-research.ts). Own prefix so it can never
+    // collide with a spreadsheet sweep's "QC-0001"-style IDs, which (for
+    // imports) still only live in that import's research note. Nullable and
+    // unique: most rows have none, and Postgres allows many NULLs under a
+    // unique index.
+    prospectExternalId: text("prospect_external_id"),
+    // Full structured output of an AI research lookup (every field the
+    // lookup returned — IT provider, email provider from the live MX
+    // lookup, signals, contacts, talking points, cited source URLs, when
+    // and by which model it was researched). The same content is also
+    // written as a human-readable note; this copy is what future features
+    // (badges, re-research diffs) can read without parsing note text.
+    // Shape: ResearchSnapshot in src/server/prospect-research.ts.
+    research: jsonb("research"),
 
     billingStreet: text("billing_street"),
     billingCity: text("billing_city"),
@@ -159,7 +175,10 @@ export const customers = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("customers_status_idx").on(t.status)]
+  (t) => [
+    index("customers_status_idx").on(t.status),
+    uniqueIndex("customers_prospect_external_id_unique").on(t.prospectExternalId),
+  ]
 );
 
 export const contacts = pgTable(
