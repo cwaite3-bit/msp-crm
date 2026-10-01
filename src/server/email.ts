@@ -12,6 +12,22 @@ export type SendEmailInput = {
   attachments?: { filename: string; content: Buffer }[];
 };
 
+// Addresses blind-copied on EVERY email the app sends — staff notifications
+// and customer-facing emails alike (quote sent, MSA/addendum for signature,
+// accept/decline/sign alerts, new intake leads, test email). Set
+// NOTIFY_BCC_EMAIL in Vercel to one address or a comma-separated list;
+// leave it unset to turn copying off. BCC, so customers never see it. An
+// address that's already the "to" recipient is skipped so nobody gets the
+// same email twice.
+function bccRecipients(to: string): string[] {
+  const toLower = to.trim().toLowerCase();
+  const list = (process.env.NOTIFY_BCC_EMAIL || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s && s.toLowerCase() !== toLower);
+  return [...new Set(list)];
+}
+
 export function isEmailConfigured() {
   return Boolean(process.env.RESEND_API_KEY);
 }
@@ -26,9 +42,11 @@ export async function sendEmail(input: SendEmailInput) {
   const resend = new Resend(apiKey);
   const from = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 
+  const bcc = bccRecipients(input.to);
   const { data, error } = await resend.emails.send({
     from,
     to: input.to,
+    ...(bcc.length ? { bcc } : {}),
     subject: input.subject,
     html: input.html,
     attachments: input.attachments?.map((a) => ({

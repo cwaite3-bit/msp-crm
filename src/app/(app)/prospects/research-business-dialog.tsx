@@ -29,9 +29,9 @@ const NO_CONFIDENCE = "__none__"; // Radix Select can't use "" as an item value
 
 type Step = "lookup" | "researching" | "review";
 
-// State defaults to AZ — where almost all prospecting happens today; just
-// overwrite it for anywhere else.
-const EMPTY_LOOKUP: ResearchLookupInput = { name: "", city: "", state: "AZ", website: "", knownInfo: "" };
+// No default state — prospects can be anywhere. Either a 2-letter code or a
+// full name works (normalizeState turns "Texas" into "TX" on save).
+const EMPTY_LOOKUP: ResearchLookupInput = { name: "", city: "", state: "", website: "", knownInfo: "" };
 
 // Editable subset of the record shown on the review step — everything that
 // lands in a real customers/contacts column. The rest of the research
@@ -318,7 +318,7 @@ export function ResearchBusinessDialog({
                   id="rb-lookup-state"
                   value={lookup.state}
                   onChange={(e) => setLookup({ ...lookup, state: e.target.value })}
-                  placeholder="AZ"
+                  placeholder="Any state, e.g. TX or Texas"
                 />
               </div>
               <div className="col-span-2 flex flex-col gap-1.5">
