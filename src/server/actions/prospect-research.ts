@@ -14,28 +14,26 @@
 //
 // A lookup takes 30–90s. Server Actions inherit the calling page's duration
 // limit, which is why src/app/(app)/prospects/page.tsx sets maxDuration.
-import { resolveMx } from "node:dns/promises";
 import { db } from "@/server/db";
 import { customers, contacts, notes, users } from "@/server/db/schema";
 import { auth } from "@/auth";
 import { and, eq, isNotNull, like } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { resolveAnthropicModel } from "@/server/anthropic-model";
+import { lookupEmailProvider } from "@/server/mx-lookup";
 import {
   RESEARCH_SYSTEM_PROMPT,
   buildResearchPrompt,
   parseResearchText,
   coerceResearchRecord,
   businessDomain,
-  classifyMx,
   findDuplicateMatches,
   buildResearchNote,
   employeeCountFromEstimate,
-  splitPersonName,
+  buildContactRows,
   nextResearchId,
   RESEARCH_ID_PREFIX,
   type DuplicateMatch,
-  type EmailProviderInfo,
   type ResearchLookupInput,
   type ResearchResult,
   type ResearchSnapshot,
@@ -69,24 +67,6 @@ type AnthropicMessageResponse = {
   content?: AnthropicContentBlock[];
   stop_reason?: string | null;
 };
-
-async function lookupEmailProvider(domain: string | null): Promise<EmailProviderInfo | null> {
-  if (!domain) return null;
-  try {
-    const records = await Promise.race([
-      resolveMx(domain),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-    ]);
-    const hosts = records.sort((a, b) => a.priority - b.priority).map((r) => r.exchange);
-    return classifyMx(domain, hosts);
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    // ENODATA / ENOTFOUND: the domain answers but has no MX, or doesn't
-    // resolve at all — both are real findings worth recording.
-    if (code === "ENODATA" || code === "ENOTFOUND") return classifyMx(domain, []);
-    return null; // timeout / resolver failure — just leave it out
-  }
-}
 
 async function loadDuplicateCandidates() {
   return db
@@ -321,34 +301,7 @@ export async function saveResearchedProspect(input: SaveResearchedProspectInput)
           })
           .returning({ id: customers.id });
 
-        const contactRows: (typeof contacts.$inferInsert)[] = [];
-        if (record.decisionMaker) {
-          const { firstName, lastName } = splitPersonName(record.decisionMaker);
-          contactRows.push({
-            customerId: customer.id,
-            firstName,
-            lastName,
-            title: record.decisionMakerTitle,
-            isPrimary: true,
-          });
-        }
-        const seen = new Set(record.decisionMaker ? [record.decisionMaker.toLowerCase()] : []);
-        for (const c of record.additionalContacts) {
-          if (seen.has(c.name.toLowerCase())) continue;
-          seen.add(c.name.toLowerCase());
-          const { firstName, lastName } = splitPersonName(c.name);
-          contactRows.push({
-            customerId: customer.id,
-            firstName,
-            lastName,
-            title: c.title,
-            email: c.email,
-            phone: c.phone,
-            // No named decision maker → the first additional contact
-            // becomes primary, so the prospect still has one.
-            isPrimary: !record.decisionMaker && contactRows.length === 0,
-          });
-        }
+        const contactRows = buildContactRows(record, customer.id);
         if (contactRows.length) await tx.insert(contacts).values(contactRows);
 
         await tx.insert(notes).values({

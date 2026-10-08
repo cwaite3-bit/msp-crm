@@ -15,6 +15,7 @@
 // fields listed on ResearchRecord below.
 
 import { normalizeState, formatDate } from "@/lib/utils";
+import { sweepNoteLines, type SweepProvenance } from "@/server/area-sweep";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,6 +104,8 @@ export type ResearchSnapshot = ResearchResult & {
   researchedById: string;
   staffContext: string | null;
   lookupInput: ResearchLookupInput;
+  // Set only on prospects created by Prospects → Area sweep.
+  sweep?: SweepProvenance;
 };
 
 export type ResearchLookupInput = {
@@ -555,6 +558,47 @@ export function employeeCountFromEstimate(raw: string | null): number | null {
   return null;
 }
 
+// The contacts a researched record turns into: the decision maker as the
+// primary contact, then any additional named staff (deduped by name). With
+// no named decision maker, the first additional contact becomes primary so
+// the prospect still has one. Shared by Research a business and Area sweep.
+export function buildContactRows(record: ResearchRecord, customerId: string) {
+  const rows: {
+    customerId: string;
+    firstName: string;
+    lastName: string;
+    title: string | null;
+    email?: string | null;
+    phone?: string | null;
+    isPrimary: boolean;
+  }[] = [];
+  if (record.decisionMaker) {
+    const { firstName, lastName } = splitPersonName(record.decisionMaker);
+    rows.push({ customerId, firstName, lastName, title: record.decisionMakerTitle, isPrimary: true });
+  }
+  // "Dr. Jane Roe" and "Jane Roe" are the same person.
+  const nameKey = (n: string) => {
+    const { firstName, lastName } = splitPersonName(n);
+    return `${firstName} ${lastName}`.toLowerCase().trim();
+  };
+  const seen = new Set(record.decisionMaker ? [nameKey(record.decisionMaker)] : []);
+  for (const c of record.additionalContacts) {
+    if (seen.has(nameKey(c.name))) continue;
+    seen.add(nameKey(c.name));
+    const { firstName, lastName } = splitPersonName(c.name);
+    rows.push({
+      customerId,
+      firstName,
+      lastName,
+      title: c.title,
+      email: c.email,
+      phone: c.phone,
+      isPrimary: !record.decisionMaker && rows.length === 0,
+    });
+  }
+  return rows;
+}
+
 export function splitPersonName(full: string): { firstName: string; lastName: string } {
   const cleaned = full.replace(/^(dr|mr|mrs|ms|miss)\.?\s+/i, "").trim();
   const [first, ...rest] = cleaned.split(/\s+/);
@@ -610,6 +654,7 @@ export function buildResearchNote(snapshot: ResearchSnapshot): string {
     r.hours && `Hours: ${r.hours}`,
     googleLine,
     `Researched: ${formatDate(new Date(snapshot.researchedAt))} (${snapshot.model})`,
+    ...(snapshot.sweep ? sweepNoteLines(snapshot.sweep) : []),
   ]);
   add("OTHER LOCATIONS", [bullets(r.otherLocations)]);
   add("BUSINESS / IT SIGNALS", [bullets(r.businessItSignals)]);

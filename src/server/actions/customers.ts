@@ -233,6 +233,9 @@ export type ProspectFilters = {
   // resetQuote clears it back to null). Lets staff pull up who they've
   // already quoted, separate from who's still pre-quote.
   quoteSent?: boolean;
+  // Prospects → Area sweep's "show what this sweep imported" link
+  // (/prospects?sweep=<id>) — matches customers.research.sweep.sweepId.
+  sweepId?: string;
 };
 
 // High/Medium/Low doesn't sort meaningfully as text, so rank it numerically
@@ -288,6 +291,7 @@ export async function searchProspects(query: string, filters: ProspectFilters = 
   else if (filters.ownerId) conditions.push(eq(customers.accountOwnerId, filters.ownerId));
   if (filters.hasEmail) conditions.push(or(isNotNull(customers.email), isNotNull(customers.publicEmail))!);
   if (filters.hasPhone) conditions.push(isNotNull(customers.phone));
+  if (filters.sweepId) conditions.push(sql`${customers.research}->'sweep'->>'sweepId' = ${filters.sweepId}`);
   if (filters.quoteSent) {
     conditions.push(
       exists(

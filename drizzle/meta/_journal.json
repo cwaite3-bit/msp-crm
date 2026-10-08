@@ -127,6 +127,13 @@
       "when": 1790447873955,
       "tag": "0017_fluffy_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791483070646,
+      "tag": "0018_add_area_sweep",
+      "breakpoints": true
     }
   ]
 }

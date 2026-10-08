@@ -773,6 +773,92 @@ export const quickbooksConnections = pgTable("quickbooks_connections", {
 });
 
 // ---------------------------------------------------------------------------
+// Prospects → Area sweep: an address + ring (e.g. 10–20 mi) split into
+// search areas, each searched by Claude + web search, with every business
+// found held here for staff approval before anything becomes a prospect.
+// See src/server/area-sweep.ts (pure) and src/server/actions/area-sweep.ts.
+// ---------------------------------------------------------------------------
+
+export const prospectSweeps = pgTable(
+  "prospect_sweeps",
+  {
+    id: cuid(),
+    centerAddress: text("center_address").notNull(),
+    // What the geocoder actually matched, and how precisely ("address",
+    // "zip" fallback, or "manual" coordinates typed by staff).
+    centerMatched: text("center_matched"),
+    centerQuality: text("center_quality").notNull(),
+    centerLat: numeric("center_lat", { precision: 9, scale: 6 }).notNull(),
+    centerLng: numeric("center_lng", { precision: 9, scale: 6 }).notNull(),
+    innerMiles: numeric("inner_miles", { precision: 5, scale: 1 }).notNull(),
+    outerMiles: numeric("outer_miles", { precision: 5, scale: 1 }).notNull(),
+    // SweepOptions (size range, industry focus, per-area target, chains).
+    options: jsonb("options").notNull(),
+    importedCount: integer("imported_count").notNull().default(0),
+    importedAt: timestamp("imported_at"),
+    createdById: text("created_by_id").references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("prospect_sweeps_created_idx").on(t.createdAt)]
+);
+
+export const prospectSweepAreas = pgTable(
+  "prospect_sweep_areas",
+  {
+    sweepId: text("sweep_id")
+      .notNull()
+      .references(() => prospectSweeps.id, { onDelete: "cascade" }),
+    index: integer("index").notNull(),
+    // SearchArea from planSearchAreas (bearings, radii, center point).
+    plan: jsonb("plan").notNull(),
+    placeHint: text("place_hint"),
+    // PENDING → RUNNING → DONE | FAILED. One row per area so two areas
+    // running at once never write over each other.
+    status: text("status").notNull().default("PENDING"),
+    error: text("error"),
+    foundCount: integer("found_count").notNull().default(0),
+    model: text("model"),
+    // Real usage the API reported: { inputTokens, outputTokens, webSearches }.
+    usage: jsonb("usage"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+  },
+  (t) => [uniqueIndex("prospect_sweep_areas_pk").on(t.sweepId, t.index)]
+);
+
+export const prospectSweepCandidates = pgTable(
+  "prospect_sweep_candidates",
+  {
+    id: cuid(),
+    sweepId: text("sweep_id")
+      .notNull()
+      .references(() => prospectSweeps.id, { onDelete: "cascade" }),
+    areaIndex: integer("area_index").notNull(),
+    // candidateKey(): normalized name + street number + ZIP, so the same
+    // business found by two neighbouring areas is stored once.
+    key: text("key").notNull(),
+    // ResearchRecord (src/server/prospect-research.ts), already sanitized.
+    record: jsonb("record").notNull(),
+    emailProvider: jsonb("email_provider"),
+    lat: numeric("lat", { precision: 9, scale: 6 }),
+    lng: numeric("lng", { precision: 9, scale: 6 }),
+    distanceMiles: numeric("distance_miles", { precision: 6, scale: 2 }),
+    direction: text("direction"),
+    // "verified" = our geocoder placed the address; "unverified" = it
+    // couldn't, so the distance is unknown.
+    geocodeStatus: text("geocode_status").notNull(),
+    inRing: boolean("in_ring").notNull().default(false),
+    model: text("model"),
+    importedCustomerId: text("imported_customer_id").references(() => customers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("prospect_sweep_candidates_key_unique").on(t.sweepId, t.key),
+    index("prospect_sweep_candidates_sweep_idx").on(t.sweepId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 

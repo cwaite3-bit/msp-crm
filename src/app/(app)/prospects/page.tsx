@@ -13,6 +13,7 @@ import { StateAssignmentsDialog } from "./state-assignments-dialog";
 import { BackfillConfidenceButton } from "./backfill-confidence-button";
 import { BackfillConfidenceFileDialog } from "./backfill-confidence-file-dialog";
 import { ResearchBusinessDialog } from "./research-business-dialog";
+import { AreaSweepDialog } from "./area-sweep-dialog";
 import type { ProspectStage, SizeBucketValue } from "@/lib/prospect";
 
 // "Research a business" (ResearchBusinessDialog) runs a 30–90s AI + web
@@ -36,9 +37,11 @@ export default async function ProspectsPage({
     sort?: string;
     dir?: string;
     archived?: string;
+    sweep?: string;
   }>;
 }) {
-  const { q, state, stage, industry, size, owner, hasEmail, hasPhone, quoteSent, sort, dir, archived } = await searchParams;
+  const { q, state, stage, industry, size, owner, hasEmail, hasPhone, quoteSent, sort, dir, archived, sweep } =
+    await searchParams;
   const query = q ?? "";
   const showArchived = archived === "1";
   const filterHasEmail = hasEmail === "1";
@@ -59,6 +62,7 @@ export default async function ProspectsPage({
       sort: sort === "confidence" ? "confidence" : undefined,
       dir: dir === "asc" ? "asc" : "desc",
       archived: showArchived,
+      sweepId: sweep || undefined,
     }),
     listProspectFilterOptions(),
     listUsers(),
@@ -66,7 +70,9 @@ export default async function ProspectsPage({
   ]);
 
   const staff = allUsers.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }));
-  const hasFilters = !!(query || state || stage || industry || size || owner || filterHasEmail || filterHasPhone || filterQuoteSent);
+  const hasFilters = !!(
+    query || state || stage || industry || size || owner || filterHasEmail || filterHasPhone || filterQuoteSent || sweep
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -96,6 +102,7 @@ export default async function ProspectsPage({
                 </Link>
               </Button>
               <StateAssignmentsDialog states={filterOptions.states} staff={staff} initialAssignments={stateAssignments} />
+              <AreaSweepDialog staff={staff} />
               <ResearchBusinessDialog staff={staff} currentUserId={session?.user?.id ?? ""} />
               <ImportProspectsDialog />
               <NewProspectDialog />
@@ -126,6 +133,15 @@ export default async function ProspectsPage({
             <BackfillConfidenceButton />
             <BackfillConfidenceFileDialog />
           </div>
+        </div>
+      )}
+
+      {sweep && !showArchived && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <span>Showing only prospects imported by one area sweep.</span>
+          <Link href="/prospects" className="font-medium underline">
+            Show all prospects
+          </Link>
         </div>
       )}
 
